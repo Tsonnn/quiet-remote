@@ -1,0 +1,6 @@
+# Build outputs (the release APK itself is committed on purpose)
+build-manual/
+test/build/
+debug.keystore
+*.idsig
+*.apk.idsig
