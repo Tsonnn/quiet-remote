@@ -1,5 +1,7 @@
 # Quiet Remote
 
+**Download the app: [Quiet-Remote-v47.2.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v47.2/Quiet-Remote-v47.2.apk)** — tap to download, then open it to install. Free, no ads, no account.
+
 A free, ad-free Android remote for Vizio SmartCast TVs. No ads, no
 account, no login, no monthly fee, no cloud. Your phone talks to the
 TV directly over your home WiFi.
