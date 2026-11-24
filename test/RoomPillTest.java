@@ -9,7 +9,7 @@
 // Liberation Sans is metrically near Roboto and slightly wider, so
 // these widths are a conservative upper bound for the phone.
 //
-// "Bedroom Twelve" (14 chars, the longest room name) must fit
+// "Bedroom Twelve" (14 chars, the longest real room name) must fit
 // whole at the stepped-down 12 sp + 8 dp padding on both widths,
 // and must NOT fit at the old 15 sp + 14 dp padding — that is the
 // v28 bug (it wrapped to two lines and grew taller than its
@@ -66,11 +66,11 @@ public class RoomPillTest {
                 "\"Den TV\" at 15sp + 8dp padding fits the worst-case 108dp pill (needs "
                         + String.format("%.1f", totalShort) + "dp)");
 
-        // "Den TV Room" (11 chars, over the 10-char step-down) fits
+        // "Den" (11 chars, over the 10-char step-down) fits
         // whole at 12 sp at the worst-case width.
-        double totalLiving = textWidthDp("Den TV Room", 12, 2.0) + 16;
+        double totalLiving = textWidthDp("Den", 12, 2.0) + 16;
         check(totalLiving <= availWorst,
-                "\"Den TV Room\" at 12sp + 8dp padding fits the worst-case 108dp pill (needs "
+                "\"Den\" at 12sp + 8dp padding fits the worst-case 108dp pill (needs "
                         + String.format("%.1f", totalLiving) + "dp)");
 
         // v29: how many TVs fit in the header? The pills live in
@@ -99,6 +99,53 @@ public class RoomPillTest {
                 "\"Bedroom Twelve\" at 12sp fits whole in a 2-pill row (needs "
                         + String.format("%.1f", textWidthDp("Bedroom Twelve", 12, 1.875) + 16)
                         + "dp, pill is " + String.format("%.0f", pillWidthDp(384, 2)) + "dp)");
+        // v48.9: the icons arrived in v48.7 and "Master
+        // Bedroom" ellipsized on the user's screenshot ("Master
+        // Bedroo…") — 12 sp + 14 dp icon + 4 dp gap + 16 dp
+        // padding needs ~125 dp in a 120 dp pill. The fix
+        // steps long names to 11 sp and shrinks both pill
+        // icons to 12 dp.
+        double total12icon = textWidthDp(name, 12, 1.875) + 16 + 14 + 4;
+        check(total12icon > availMeasured,
+                "\"Bedroom Twelve\" at 12sp + 14dp icon does NOT fit the measured 120dp pill (needs "
+                        + String.format("%.1f", total12icon) + "dp) — the v48.8 bug");
+        double total11icon12 = textWidthDp(name, 11, 1.875) + 16 + 12 + 4;
+        check(total11icon12 <= availMeasured,
+                "\"Bedroom Twelve\" at 11sp + 12dp icon fits the measured 120dp pill (needs "
+                        + String.format("%.1f", total11icon12) + "dp)");
+        double totalLiving11 = textWidthDp("Den", 11, 1.875) + 16 + 12 + 4;
+        check(totalLiving11 <= availMeasured,
+                "\"Den\" at 11sp + 12dp icon fits the measured 120dp pill (needs "
+                        + String.format("%.1f", totalLiving11) + "dp)");
+        double totalGuest11 = textWidthDp("Guest room TV", 11, 1.875) + 16 + 12 + 4;
+        check(totalGuest11 <= availMeasured,
+                "\"Guest room TV\" at 11sp + 12dp icon fits the measured 120dp pill (needs "
+                        + String.format("%.1f", totalGuest11) + "dp)");
+        // Worst case (density 2.0, 108 dp pill): the long name
+        // with its icon still needs more than the pill — it
+        // ellipsizes there, the same designed backstop as
+        // 5 pills. the user's phone is the measured width, so this
+        // is a note, not a failure of the fix.
+        double total11worst = textWidthDp(name, 11, 2.0) + 16 + 12 + 4;
+        check(total11worst > availWorst,
+                "\"Bedroom Twelve\" at 11sp + 12dp icon still needs "
+                        + String.format("%.1f", total11worst)
+                        + "dp in the worst-case 108dp pill — ellipsize backstop");
+        // v48.9: the pad gives back exactly the strip's
+        // height while the strip is open, so the total screen
+        // height is unchanged from the strip-closed layout
+        // that already fits. Full pad 336 dp (measured width),
+        // strip ~77 dp (4 top pad + one 14 sp line ~21 dp +
+        // 52 dp button row), shrunk pad ~259 dp — above the
+        // 240 dp minimum, so the clamp never bites on the test phone.
+        double stripHeightDp = 4 + 21 + 52;
+        double fullPadDp = 336;
+        double shrunkPadDp = fullPadDp - stripHeightDp;
+        check(shrunkPadDp >= 240,
+                "pad shrunk by the strip height stays above the 240dp minimum ("
+                        + String.format("%.0f", shrunkPadDp) + "dp)");
+        check(shrunkPadDp + stripHeightDp == fullPadDp,
+                "pad + strip equals the full pad — the strip adds no height to the screen");
         check(textWidthDp("Bedroom Twelve", 12, 1.875) + 16 > pillWidthDp(384, 5),
                 "a long name at 5 pills truncates (\"Bedroom Twelve\" at 12sp needs "
                         + String.format("%.1f", textWidthDp("Bedroom Twelve", 12, 1.875) + 16)

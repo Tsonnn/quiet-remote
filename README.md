@@ -1,6 +1,16 @@
 # Quiet Remote
 
-**Download the app: [Quiet-Remote-v47.2.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v47.2/Quiet-Remote-v47.2.apk)** — tap to download, then open it to install. Free, no ads, no account.
+**Download the app: [Quiet-Remote-v48.0.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.0/Quiet-Remote-v48.0.apk)** — tap to download, then open it to install. Free, no ads, no account.
+
+## Quick start
+
+1. **Install.** Tap the download link at the top of this page, then open the APK to install. If your phone asks, allow installing from unknown sources for your browser.
+2. **Pair a TV.** Connect your phone to your home WiFi, tap FIND MY TVs, tap your TV, tap PAIR, then type the 4-digit PIN shown on the TV screen. Turn the TV on with its regular remote first — you can't see the PIN while the TV is off.
+3. **Use the remote.** Swipe the touchpad to move, double-tap it to select. Drag the volume slider, or use your phone's volume keys. Power, Home, Menu, Back and playback are all on the screen.
+4. **Casting?** When something is casting to the TV, a mini-player strip appears under the TV row — pause, stop, or tap Skip Ad. Skippable ads are skipped for you automatically while the strip is open (turn it off in Settings).
+5. **Add the widget.** Long-press your home screen, tap Widgets, find Quiet Remote, and drag it onto the home screen. It has Power, volume, and a big Skip Ad button.
+
+Tip: for power-on over WiFi, put the TV in Quick Start mode (Settings > System > Power Mode > Quick Start on the TV). In Eco Mode the TV is off the network when it is off, and the app cannot find it or turn it on.
 
 A free, ad-free Android remote for Vizio SmartCast TVs. No ads, no
 account, no login, no monthly fee, no cloud. Your phone talks to the
@@ -21,6 +31,8 @@ TV directly over your home WiFi.
 - **Volume that jumps.** Drag the slider and the volume goes straight
   there — it does not creep up one step at a time. Tap the speaker
   icon to mute.
+- **Your phone's volume keys work too.** While the app is open, the
+  volume up / down buttons on your phone change the TV volume.
 - **The usual buttons.** Power, mute, home, menu, back, and playback
   (rewind / play-pause / fast-forward).
 - **YouTube and Netflix buttons** that open the apps on the TV.
@@ -36,6 +48,26 @@ TV directly over your home WiFi.
   red when it is off, grey while the remote cannot tell yet. It
   flips the moment you tap it, and the app opens fast by showing
   the last-known state at once.
+- **Casting, in the app.** When something is casting to the selected
+  TV, a mini-player strip appears under the TV row: what is playing,
+  Pause, Stop, and Skip Ad — plus a countdown while an ad plays.
+  The TV's pill shows a Cast icon while it is casting.
+- **Ads skip themselves.** While the cast strip is open, a skippable
+  ad is skipped by itself — no tap needed. It is on by default;
+  turn it off in Settings. The Skip Ad button and double-tap still
+  work by hand either way. Double-tap the touchpad while casting
+  to skip an ad.
+- **Home-screen widget.** Power (labelled with the TV's name),
+  volume − / +, and a big Skip Ad button, all without opening the
+  app. Tap the magnifying glass — or anywhere on the widget
+  background — to open the remote.
+- **Goodnight.** One quiet tap turns off every TV that is on.
+- **Closed captions and sleep timer, on the main screen.** Two quiet
+  controls under the remote that follow the selected TV — the same
+  per-TV settings as in Settings.
+- **It picks the TV that is on.** On launch, when more than one TV
+  is paired, the app selects the TV that is on. Your own tap always
+  wins — the app never overrides a TV you picked.
 - **Remove a TV.** A TV the app cannot find stays listed, dimmed.
   Take it off in Settings with REMOVE THIS TV.
 - **Settings shows the real version** at the bottom, so you can
@@ -59,7 +91,7 @@ TV directly over your home WiFi.
 
 ## Install
 
-1. Download `Quiet-Remote-v47.2.apk` from the
+1. Download `Quiet-Remote-v48.0.apk` from the
    [latest release](../../releases/latest).
 2. On your phone, allow installing from unknown sources for your
    browser or file manager, then open the APK to install it.
@@ -88,6 +120,8 @@ far; it should work on other SmartCast models, but if it doesn't on
 yours, please [open an issue](../../issues) with your TV's model
 and what happened.
 
+A TV shows its friendly name when it has one (for example "Living Room"), its model when only the model is known (for example "E50-E1"), or "Name unknown" with its address when it reports neither. A TV that shows only its model number (for example "E50-E1") picks up its friendly name ("Living Room") after the next scan.
+
 Known notes for this release:
 
 - **Netflix has not been confirmed working yet.** The button has
@@ -97,6 +131,12 @@ Known notes for this release:
   it — the model and the exact message the app shows.
 - The YouTube button uses the same launch mechanism and is confirmed
   working on the tested models.
+- **Ad skip depends on the TV's receiver.** Skip Ad sends the
+  standard skip command to the TV's built-in Cast receiver, and
+  the receiver ignores it when no skippable ad is playing. Some
+  receivers ignore it even during a skippable ad — that is the
+  receiver, not the app. If Skip Ad does nothing on your TV,
+  please report it — the model and what was playing.
 
 ## Build from source
 
@@ -109,7 +149,7 @@ android-34, and JDK 17. Edit the `SDK` and `JAVA_HOME` paths at the
 top of `build-apk.sh` if yours are elsewhere.
 
 ```sh
-./build-apk.sh                # produces Quiet-Remote-v47.2.apk
+./build-apk.sh                # produces TV-Remote-v48.0.apk
 ./build-apk.sh my-build.apk   # custom output name
 ```
 
@@ -150,6 +190,10 @@ Run the tests (plain JVM, no Android device needed):
 - **App launching:** YouTube and Netflix open via
   `PUT /app/launch` with the apps' documented launch configs
   (from the pyvizio app list).
+- **Casting:** the mini-player strip talks to the TV's built-in Cast
+  receiver over the Cast protocol — what's playing, pause, stop,
+  and Skip Ad. The home-screen widget sends the same commands
+  without opening the app.
 
 ## Contributing
 

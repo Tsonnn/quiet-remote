@@ -190,6 +190,69 @@ public final class TvRegistry {
      *  until the first fresh read. Never stores -1 (unknown). */
     public static String prefKeyCachedPower(TvInfo tv) { return tv.id + "_cached_power"; }
 
+    /** v48.19: Goodnight — which TVs get a power toggle. The Vizio
+     *  API has only a Power TOGGLE, no discrete off, so a TV is
+     *  toggled ONLY when its last-known power is 1 (on). A TV
+     *  that is off (0) or unknown (-1) is never toggled —
+     *  toggling it would turn it ON. Null/empty input → no
+     *  targets, never crash. Pure static, JVM-tested. */
+    public static List<Integer> goodnightTargets(int[] cachedPower) {
+        List<Integer> out = new ArrayList<>();
+        if (cachedPower == null) return out;
+        for (int i = 0; i < cachedPower.length; i++) {
+            if (cachedPower[i] == 1) out.add(i);
+        }
+        return out;
+    }
+
+    /** v48.25: auto-select the TV that's on, at launch only.
+     *  Once fresh power is known for every TV (1 on / 0 off /
+     *  -1 unknown): if exactly ONE TV is on, return its index;
+     *  otherwise return lastSelected — both on, both off, or any
+     *  state unknown keeps the current default (the last-selected
+     *  TV). Null/empty input → lastSelected, never crash. Pure
+     *  static, JVM-tested. */
+    public static int autoSelectIndex(int[] power, int lastSelected) {
+        if (power == null || power.length == 0) return lastSelected;
+        int onCount = 0;
+        int onIndex = lastSelected;
+        for (int i = 0; i < power.length; i++) {
+            if (power[i] < 0) return lastSelected;
+            if (power[i] == 1) { onCount++; onIndex = i; }
+        }
+        return onCount == 1 ? onIndex : lastSelected;
+    }
+
+    // ---------- home-screen widget display (v48.26) ----------
+
+    /** Widget power-button colours — the same soft green / red /
+     *  grey as the app's power button (MainActivity COL_POWER_ON /
+     *  COL_POWER / COL_POWER_UNKNOWN). Pure static, JVM-tested. */
+    public static final int WIDGET_POWER_ON_COLOR = 0xFF81C784;
+    public static final int WIDGET_POWER_OFF_COLOR = 0xFFE57373;
+    public static final int WIDGET_POWER_UNKNOWN_COLOR = 0xFF8E8E93;
+
+    /** Power state (1 on / 0 off / anything else unknown) to the
+     *  widget power button's background colour. */
+    public static int widgetPowerColor(int power) {
+        if (power == 1) return WIDGET_POWER_ON_COLOR;
+        if (power == 0) return WIDGET_POWER_OFF_COLOR;
+        return WIDGET_POWER_UNKNOWN_COLOR;
+    }
+
+    /** v48.29: the widget's wide Power button reads the selected
+     *  TV's room name ("Bedroom Twelve") instead of the word
+     *  "Power", so the user knows which TV the widget controls.
+     *  Null (nothing paired yet) reads "No TV yet". The room is
+     *  never null/empty for a constructed TvInfo (the constructor
+     *  normalises it to "TV"), but the guard stays so a blank
+     *  room read from storage can never paint an empty button. */
+    public static String widgetPowerLabel(TvInfo tv) {
+        if (tv == null) return "No TV yet";
+        if (tv.room == null || tv.room.isEmpty()) return "TV";
+        return tv.room;
+    }
+
     // ---------- matching a discovered device to a known TV ----------
 
     /** True when this discovered device looks like this TV's model:

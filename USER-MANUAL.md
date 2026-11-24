@@ -1,17 +1,16 @@
 # Quiet Remote — User Manual
 
-**Draft — for the launch version (v29).** Quiet Remote is a free Android remote for Vizio SmartCast TVs. No ads, no account, no login, no cloud, no monthly fee. Your phone talks to your TV directly over your home WiFi.
+**Draft — for version 48.0.** Quiet Remote is a free Android remote for Vizio SmartCast TVs. No ads, no account, no login, no cloud, no monthly fee. Your phone talks to your TV directly over your home WiFi.
 
 ## To check on the live app
 
 These are in the manual but have not been confirmed on a real TV yet:
 
 - The Netflix button opening Netflix (new — first live tap is the real test).
-- The YouTube button opening YouTube (same — first live tap is the real test).
 - The name under the app icon on the home screen reading "Quiet Remote".
 - The exact words Android shows when you install the APK (the allow-install prompt).
 - The TV row scrolling sideways with 4 or 5 TVs, and dimmed pills for TVs not on this WiFi (in the v29 code, not yet tried live).
-- A TV that shows only its model number (for example "E50-E1") picking up its friendly name ("Living Room") after the next scan.
+- A TV that shows only its model number (for example "E50-E1") picks up its friendly name ("Living Room") after the next scan.
 
 ## What you need
 
@@ -86,6 +85,8 @@ Your TVs are the pills across the top of the remote. Tap one to switch to it —
 - A **dimmed** pill means that TV was not found on this WiFi in the latest scan. You can still tap it, and the app will tell you it is not on this WiFi. Nothing is dimmed before the first scan runs.
 - There is no limit on how many TVs the app can remember.
 
+When the app opens, it picks the TV that is on — if exactly one of your TVs is on, that one is selected. If more than one is on, or none is, it keeps the TV you last picked. Tapping a pill yourself always wins.
+
 ### The touchpad
 
 The big black circle is the touchpad. It sits just above the buttons, at the bottom of the screen, so your thumb can reach it one-handed without stretching to the top.
@@ -106,10 +107,39 @@ The big black circle is the touchpad. It sits just above the buttons, at the bot
 - **Power** (red button, top right) — turns the selected TV on or off. Turning on over WiFi only works if the TV is in Quick Start mode.
 - **Settings** (gear icon, top right) — opens Settings.
 
+### Goodnight
+
+**Goodnight** is small, dimmed text in the header. One tap turns off every TV that is on. A TV that is already off, or whose state the app does not know yet, is left alone — Goodnight can never switch a TV on. A short status line says what it did.
+
 ### Volume
 
 - Drag the **slider** to the level you want. The number sits in the thumb (for example "50%"). The app sets the volume directly — no repeated tapping.
 - Tap the **speaker icon** to mute, and tap it again to unmute.
+- Your phone's **volume keys** drive the TV volume too, while the remote is open. Each press moves it 5 points. The phone's own volume never changes.
+
+### Captions and sleep timer on the main screen
+
+Under the volume row, two quiet text controls follow the selected TV: **CC** turns closed captions on or off, and **Sleep** steps the sleep timer through Off, 30, 60, 90, then 120 minutes, then back to Off. They do the same as the matching items in Settings.
+
+### Casting — the mini-player strip
+
+When something is casting to the selected TV, a mini-player strip appears under the TV row. It shows what is playing, with **Pause**, **Stop**, and **Skip Ad**. Tap the TV's pill again to hide it.
+
+- While an ad is playing, the strip counts down ("Skippable in 5s", then "Skippable now").
+- **Double-tap the touchpad** while casting to skip an ad. (Double-tap still means Select when nothing is casting.)
+- **Ads skip themselves.** While the strip is open, a skippable ad is skipped for you automatically — no tap needed. It is on by default; turn it off in Settings under **Auto-skip ads**. The Skip Ad button and double-tap still work by hand.
+- The TV's pill shows a Cast icon while it is casting. The TV controls stay live while casting to a TV.
+
+## The home-screen widget
+
+You can control the selected TV without opening the app. Long-press your home screen, tap **Widgets**, find Quiet Remote, and drag it onto the home screen.
+
+- **Power** shows the selected TV's name, and its colour matches the app: green when the TV is on, red when it is off, grey while the remote cannot tell yet. Tap it to turn that TV on or off.
+- **Vol − / +** turn the volume down or up, 5 points per tap.
+- **Skip Ad** is a big button across the bottom row. It sends the skip command to the TV's built-in Cast receiver — it works when a skippable ad is playing, and does nothing when nothing is casting.
+- The **magnifying glass** opens the app.
+
+The widget controls whichever TV is selected in the app. With nothing paired yet, Power reads "No TV yet".
 
 ## Typing with the phone keyboard
 
@@ -127,6 +157,7 @@ Only plain letters, numbers and symbols are sent. Accents and emoji are left out
 - **Sleep Timer** — Off, 30m, 60m, 90m, or 120m. The option that is on is black with a checkmark.
 - **Picture Mode** — pick the picture mode for the selected TV.
 - **Closed Captions** — On or Off for the selected TV.
+- **Auto-skip ads** — On (the default) or Off. When it is on, a skippable ad is skipped by itself while the cast strip is open.
 - **SHOW INPUTS** — fetches the list of inputs from the TV, then tap one to switch to it.
 - **Refresh — find TVs again** — scans your WiFi again for TVs, and lists the ones it found under Refresh — tap one to add it, then pair it below. The status also names any TV it found that is not added yet.
 - **PAIR WITH THIS TV** — pair the selected TV (same as setup Step 3).

@@ -15,10 +15,13 @@ import android.graphics.drawable.Drawable;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.nsd.NsdManager;
+import android.net.nsd.NsdServiceInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -47,6 +50,7 @@ import java.net.InterfaceAddress;
 import java.net.NetworkInterface;
 import java.net.Socket;
 import java.net.URL;
+import java.nio.charset.Charset;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -701,6 +705,8 @@ public class MainActivity extends Activity {
     // longer than ~1.5 s to flip its reported power state.
     private static final int POWER_SETTLE_REREAD_MS = 5000;
     private static final String PREFS = "tvremote";
+    /** v48.15: auto-skip ads — on by default. */
+    private static final String PREF_AUTO_SKIP_ADS = "auto_skip_ads";
 
     private SharedPreferences prefs;
     // --- v21: the TV list is DYNAMIC and discovered-only. A fresh
@@ -724,6 +730,14 @@ public class MainActivity extends Activity {
     // the found-state is still unknown.
     private boolean[] tvFound = new boolean[0];
     private int selectedIndex;     // index into tvs; -1 when there are no TVs yet
+    // --- v48.25: auto-select the TV that's on, launch only. ---
+    // launchAutoSelectDone is set after the single launch attempt
+    // (whether it switched or not) — the pass never runs again
+    // while the app is open. userPickedTv is set by any manual
+    // pill/list tap — a manual tap always wins and is never
+    // overridden by the launch pass.
+    private boolean launchAutoSelectDone = false;
+    private boolean userPickedTv = false;
     // --- v21: the last live scan's devices (setup Step 2 shows
     // ONLY these — never the registry, never anything baked in).
     // scanRun says a scan has actually happened in this session. ---
@@ -777,6 +791,14 @@ public class MainActivity extends Activity {
     private SeekBar volumeBar;
     private VolumeThumbDrawable volumeThumb;
     private TextView volumeView;
+    // v48.9: true while the user's finger is on the bottom
+    // slider — the cast poll must not yank it mid-drag.
+    private boolean volumeDragging;
+    // v48.9: the pad's full measured diameter and its 40 dp
+    // swipe margin, saved at build so resizeTouchpad can give
+    // back the strip's height while it is open and restore it.
+    private int touchpadFullDiameterPx = 0;
+    private int touchpadExpandPx = 0;
     private PowerButtonView powerToggleButton;
     private SpeakerIconView speakerIcon; // v12: the speaker icon IS the mute toggle
     private Button refreshButton;
@@ -837,7 +859,140 @@ public class MainActivity extends Activity {
     // TV id — the slider tries Cast volume first (the Google Home
     // way: one absolute SET_VOLUME), and falls back to SmartCast
     // stepping when Cast is unavailable. Closed in onDestroy. ---
+    // v48: Chromecasts reuse the same map, keyed "cast:<ip>" —
+    // one cached TLS connection per device, same as a TV.
     private final Map<String, CastVolume.Client> castClients = new HashMap<>();
+    // --- v48: Chromecasts found by mDNS (_googlecast._tcp) on
+    // the same scan as the TVs. v48.2: they are no longer
+    // discovery-only — a real Chromecast (one that passed the
+    // v48.1 filter) is remembered in prefs ("cast_list", see
+    // CastMedia.encodeDevices) so a missed round never empties
+    // the list, and they list on the remote screen itself (a
+    // Chromecast needs no pairing). They are still never in
+    // the TV registry and never paired. ---
+    // v48.2: one entry per known Chromecast — live while the
+    // current discovery round has seen it, last-seen when it
+    // is only remembered. The same list feeds the remote row,
+    // the setup list and the Settings list.
+    private final List<CastMedia.CastDevice> lastCast = new ArrayList<>();
+    private NsdManager castNsd;
+    private NsdManager.DiscoveryListener castDiscoveryListener;
+    private volatile boolean castDiscovering = false;
+    // v48.4: resolves run one at a time — concurrent resolves
+    // with one shared listener starve callbacks (v48.3
+    // diagnostics: two of three services never resolved).
+    // A failed or timed-out resolve retries up to 3 times.
+    private final CastMedia.ResolveQueue castResolveQueue = new CastMedia.ResolveQueue();
+    private final Map<String, NsdServiceInfo> castResolveByName = new HashMap<>();
+    private final CastMedia.ResolveRetry castResolveRetry = new CastMedia.ResolveRetry();
+    private final Handler castResolveHandler = new Handler(Looper.getMainLooper());
+    private boolean castResolving = false;
+    private String castResolveName = null;
+    private int castResolveToken = 0;
+    private Runnable castResolveTimeout = null;
+    // v48.2: the small Chromecast row on the remote screen,
+    // under the TV pills — built in buildUi, rebuilt by
+    // rebuildRemoteCastRow whenever the list changes.
+    private LinearLayout remoteCastRow;
+    // v48.6: the inline mini-player strip on the remote screen,
+    // directly under the Chromecast row — built in buildUi,
+    // shown while a Chromecast is selected. The TV-pill
+    // selection is independent: the strip never touches the
+    // selected TV, the touchpad, or the bottom TV buttons.
+    private LinearLayout castStrip;
+    private TextView castStripNowView;
+    private Button castStripPlayPauseButton;
+    private Button castStripStopButton;
+    private Button castStripSkipAdButton;
+    private CastMedia.CastDevice selectedCast;
+    // --- v48: Chromecasts. The inline strip on the remote
+    // screen is the only control surface (v48.7: the separate
+    // control view is deleted — the user: "get rid of this page").
+    private CastMedia.CastDevice currentCast;
+    private CastMedia.MediaStatus currentCastStatus;
+    private volatile boolean castBusy = false;
+    // v48.15: auto-skip — the (session, clip) key already skipped
+    // for, so a receiver that ignores SKIP_AD is not spammed one
+    // message per poll tick. Null when no ad has been skipped yet,
+    // or the break ended.
+    private String lastAutoSkippedAdKey;
+    // v48.20: auto-skip on BUFFERING — the guard remembers the
+    // open buffering episode (at most 3 SKIP_AD sends per
+    // episode, v48.27); the delayed runnable fires the second
+    // send ~6 s after the first and the third ~12 s after the
+    // episode started. Both are cancelled/reset when the
+    // strip closes, so a reopened strip starts fresh.
+    private final CastMedia.BufferingSkipGuard bufferingSkipGuard =
+            new CastMedia.BufferingSkipGuard();
+    private final Runnable bufferingSkipSecondSend = new Runnable() {
+        @Override public void run() {
+            if (!castStripVisible()) return;
+            CastMedia.MediaStatus st = selectedCast != null ? currentCastStatus : currentTvCastStatus;
+            if (st == null) return;
+            maybeBufferingSkipAd(st);
+        }
+    };
+    // v48.10: casting TO a TV — a cast session is a state of
+    // that TV, not a separate device. One flag per TV (grown
+    // with the other per-TV slots in growSlots); the pill
+    // shows the Cast icon while that TV has an active
+    // session. The strip shows the selected TV's session,
+    // and only while it is active.
+    private boolean[] tvCasting = new boolean[0];
+    private CastMedia.MediaStatus currentTvCastStatus;
+    // v48.5: while the strip is open, re-read the receiver
+    // status every CAST_STATUS_POLL_MS so the button and
+    // status line stay true when the video changes state on
+    // its own. Stops the moment the strip hides.
+    private final Handler castStatusHandler = new Handler(Looper.getMainLooper());
+    private final Runnable castStatusPoll = new Runnable() {
+        @Override public void run() {
+            // v48.10: the poll runs while the remote is on
+            // screen. A selected dongle's strip refreshes
+            // when it is open; with no dongle selected the
+            // TVs are watched for a cast session starting,
+            // even with no strip showing. Off the remote
+            // (Settings, setup, background) it stops — the
+            // callers stop it there, and this guard is the
+            // backstop when one is missed.
+            if (remoteScroll == null || remoteScroll.getVisibility() != View.VISIBLE) return;
+            // v48.11: the poll always re-posts while the remote
+            // is on — a skipped read must not kill it (the old
+            // early return here left it dead until something
+            // else restarted it).
+            if (selectedCast != null) {
+                if (castStripVisible()) refreshCastStatus();
+            } else {
+                refreshTvCastStatus();
+            }
+            castStatusHandler.postDelayed(castStatusPoll, CastMedia.CAST_STATUS_POLL_MS);
+        }
+    };
+    // v48.16: ad countdown ticker — while the strip is open
+    // and an ad break is playing, the strip line repaints
+    // every second from the last polled break times, so the
+    // "Skippable in Ns" countdown moves between the 5 s
+    // polls. It only repaints the line — it never sends a
+    // command, so auto-skip stays on the poll path.
+    private long lastCastStatusPollUptimeMs;
+    private final Runnable castAdCountdownTick = new Runnable() {
+        @Override public void run() {
+            if (!castStripVisible()) { stopAdCountdownTicker(); return; }
+            CastMedia.MediaStatus st = selectedCast != null ? currentCastStatus : currentTvCastStatus;
+            if (st == null || st.breakClipId == null || st.breakClipId.isEmpty()
+                    || st.whenSkippable == null) {
+                stopAdCountdownTicker();
+                return;
+            }
+            double elapsed = adCountdownElapsedSeconds(st);
+            castStripNowView.setText(CastMedia.stripNowLine(st, elapsed));
+            // The line already reads "Skippable now" once the
+            // estimate crosses — no more ticking until the
+            // next poll re-syncs (or the break ends).
+            if (st.isSkippableAd(elapsed)) { stopAdCountdownTicker(); return; }
+            castStatusHandler.postDelayed(this, CastMedia.CAST_AD_COUNTDOWN_TICK_MS);
+        }
+    };
     // --- v6: cached last-known state, one slot per TV in the
     // registry. Shown at once on switch (no network), then
     // confirmed by the fast reads; volume/input also persist in
@@ -871,9 +1026,18 @@ public class MainActivity extends Activity {
     private TextView sleepTitleView;
     private TextView pictureTitleView;
     private TextView inputsTitleView;
+    // v48.15: auto-skip ads — Settings On / Off, same option-button pattern as CC.
+    private TextView autoSkipTitleView;
+    private Button autoSkipOnButton;
+    private Button autoSkipOffButton;
     private Button ccOnButton;
     private Button ccOffButton;
     private List<Button> sleepButtons;
+    // v48.23: CC + sleep timer on the main screen too — two quiet
+    // text controls under the volume row, repainted from the same
+    // per-TV caches as Settings (updateMainCcSleepUi).
+    private Button mainCcButton;
+    private Button mainSleepButton;
     private List<Button> pictureButtons;
     // --- v14: Play/Pause is ONE toggle button on the main screen.
     // Its label says what the NEXT tap sends: it starts as "Play",
@@ -904,12 +1068,19 @@ public class MainActivity extends Activity {
         if (tvs.isEmpty()) {
             migrateLegacyTvs();
         }
+        // v48.2: remembered Chromecasts load the same way — a
+        // fresh install has none, so the list starts empty and
+        // only live discovery on this WiFi ever adds one. A
+        // decoded entry is always last-seen until discovery
+        // finds it again (live is runtime-only, never stored).
+        lastCast.addAll(CastMedia.decodeDevices(prefs.getString("cast_list", "")));
         int n = tvs.size();
         tvIps = new String[n];
         tvAuths = new String[n];
         tvIdentities = new String[n];
         tvManualIp = new boolean[n];
         tvFound = new boolean[n];
+        tvCasting = new boolean[n];
         // v6: load the cached last-known state (volume/input from
         // prefs; mute starts unknown until the fast reads run).
         // v46: power is restored from prefs too — it was forced
@@ -977,7 +1148,17 @@ public class MainActivity extends Activity {
             // IP/token are captured at call time, as in sendKey.
             if (authToken != null && currentIp != null) {
                 refreshFastStateFor(selectedIndex, currentIp, authToken);
+                // v48.23: read this TV's CC + sleep timer too, so
+                // the new main-screen controls show real state at
+                // launch instead of "—" until Settings opens.
+                refreshCcState();
+                refreshSleepState();
             }
+            // v48.25: auto-select the TV that's on — one fresh
+            // power read per TV, then the rule picks the single
+            // TV that is on. Launch only, never overrides a
+            // manual tap, no-op with fewer than two TVs.
+            autoSelectTvOnLaunch();
             rediscover(true);
         }
     }
@@ -1084,6 +1265,7 @@ public class MainActivity extends Activity {
         tvIdentities = grow(tvIdentities, n, null);
         tvManualIp = grow(tvManualIp, n, false);
         tvFound = grow(tvFound, n, false);
+        tvCasting = grow(tvCasting, n, false);
         cachedVolume = grow(cachedVolume, n, -1);
         cachedInput = grow(cachedInput, n, null);
         cachedMute = grow(cachedMute, n, -1);
@@ -1227,6 +1409,7 @@ public class MainActivity extends Activity {
         tvIdentities = removeAt(tvIdentities, index);
         tvManualIp = removeAt(tvManualIp, index);
         tvFound = removeAt(tvFound, index);
+        tvCasting = removeAt(tvCasting, index);
         cachedVolume = removeAt(cachedVolume, index);
         cachedInput = removeAt(cachedInput, index);
         cachedMute = removeAt(cachedMute, index);
@@ -1289,14 +1472,26 @@ public class MainActivity extends Activity {
      *  unchanged); with many TVs each keeps a readable 96 dp
      *  minimum and the row scrolls sideways instead of
      *  squeezing. No hard limit on registered TVs. */
+    /** v48.7: the Chromecast pill is the same size as the TV
+     *  pills — same width (pillWidthPx), height, padding and
+     *  text size — so both rows share this one rule. Long
+     *  names step down to 11 sp in both rows. v48.9: 12 sp was
+     *  still too wide once the icons arrived — "Master
+     *  Bedroom" + 14 dp icon needed ~125 dp in a 120 dp pill
+     *  and ellipsized on the user's screenshot. 11 sp + the 12 dp
+     *  icons need ~115 dp (measured, RoomPillTest). */
+    private int pillTextSizeSp() {
+        for (TvRegistry.TvInfo t : tvs) {
+            if (t.room != null && t.room.length() > 10) return 11;
+        }
+        return 15;
+    }
+
     private void rebuildTvPills() {
         if (tvPillRow == null) return;
         for (Button b : tvButtons) tvPillRow.removeView(b);
         tvButtons.clear();
-        int pillSizeSp = 15;
-        for (TvRegistry.TvInfo t : tvs) {
-            if (t.room != null && t.room.length() > 10) { pillSizeSp = 12; break; }
-        }
+        int pillSizeSp = pillTextSizeSp();
         int pillWidthPx = pillWidthPx(tvs.size());
         for (int i = 0; i < tvs.size(); i++) {
             final int index = i;
@@ -1306,17 +1501,254 @@ public class MainActivity extends Activity {
             b.setEllipsize(android.text.TextUtils.TruncateAt.END);
             b.setMinimumHeight(dp(36));
             b.setPadding(dp(8), 0, dp(8), 0);
+            // v48.7: the TV icon rides at the left of the name
+            // (the drawable itself is set in
+            // updateSelectorButtons, which repaints on every
+            // selection change). Same 14 dp size as the Cast
+            // icon, so both pill rows read the same.
+            b.setCompoundDrawablePadding(dp(4));
             LinearLayout.LayoutParams cell =
                     new LinearLayout.LayoutParams(pillWidthPx, LinearLayout.LayoutParams.WRAP_CONTENT);
             cell.rightMargin = dp(8);
             b.setLayoutParams(cell);
             b.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) { selectTv(index); }
+                @Override public void onClick(View v) { selectTvByUser(index); }
             });
             tvButtons.add(b);
             tvPillRow.addView(b);
         }
         updateSelectorButtons();
+    }
+
+    /** v48.2: the Chromecast row on the remote screen — one
+     *  small button per known Chromecast (live or last-seen),
+     *  under the TV pills, never mixed into the pills (those
+     *  carry TV power state). v48.6: tapping one SELECTS it
+     *  (dark, like a selected TV pill) and shows the inline
+     *  mini-player strip under the row; tapping again deselects
+     *  and hides the strip. The separate control view is
+     *  deleted (v48.7) — the strip is the only Chromecast
+     *  control surface. GONE when nothing is known, so the
+     *  remote is exactly as before for TV-only users. */
+    private void rebuildRemoteCastRow() {
+        if (remoteCastRow == null) return;
+        remoteCastRow.removeAllViews();
+        if (lastCast.isEmpty()) {
+            remoteCastRow.setVisibility(View.GONE);
+            return;
+        }
+        remoteCastRow.setVisibility(View.VISIBLE);
+        for (final CastMedia.CastDevice e : lastCast) {
+            final boolean selected = (e == selectedCast);
+            Button b = styledButton(e.shortLabel(), pillTextSizeSp(),
+                    selected ? COL_SURFACE2 : COL_PILL_OFF,
+                    selected ? COL_ON_DARK : COL_TEXT, 22);
+            b.setSingleLine(true);
+            b.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            b.setMinimumHeight(dp(36));
+            b.setPadding(dp(8), 0, dp(8), 0);
+            // v48.7: the hand-drawn Cast symbol at the left of
+            // the name, coloured to match the pill text — the
+            // pill text itself is unchanged, with no suffix
+            // added; the icon plus the row label is the
+            // distinction from the plain TV pills. v48.9: 12 dp,
+            // not 14 — with the 11 sp step-down the name fits
+            // with room to spare (measured, RoomPillTest).
+            b.setCompoundDrawablesWithIntrinsicBounds(
+                    new CastIconDrawable(this, 12, selected ? COL_ON_DARK : COL_TEXT),
+                    null, null, null);
+            b.setCompoundDrawablePadding(dp(4));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    pillWidthPx(tvs.size()), LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = dp(8);
+            b.setLayoutParams(lp);
+            b.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    toggleCastStrip(e);
+                }
+            });
+            remoteCastRow.addView(b);
+        }
+    }
+
+    /** v48.6: tap a Chromecast button on the remote screen to
+     *  select it — the strip appears under the row and the
+     *  button paints selected. Tap again to deselect and hide
+     *  the strip. The selected TV is untouched: the strip only
+     *  controls the Chromecast, and the touchpad, buttons and
+     *  bottom volume slider keep driving the selected TV. */
+    private void toggleCastStrip(CastMedia.CastDevice e) {
+        if (selectedCast == e) {
+            closeCastStrip();
+            return;
+        }
+        openCastStrip(e);
+    }
+
+    /** v48.9: the single way out of Chromecast mode — hide
+     *  the strip, stop the poll, and give the TV remote back:
+     *  controls undimmed, slider back on the TV, pad back to
+     *  full size. Called from the toggle, and from selectTv —
+     *  tapping a TV pill is how you switch back to a TV. */
+    private void closeCastStrip() {
+        if (selectedCast == null) return;
+        // v48.15: the strip closed — a reopened strip starts fresh, so an ad still playing is skipped then.
+        lastAutoSkippedAdKey = null;
+        // v48.20: same fresh start for the buffering episode.
+        bufferingSkipGuard.reset();
+        selectedCast = null;
+        castStrip.setVisibility(View.GONE);
+        stopCastStatusPoll();
+        // v48.16: the strip closed — the countdown stops with it.
+        stopAdCountdownTicker();
+        // v48.20: the delayed buffering second send stops with it.
+        stopBufferingSkipSecondSend();
+        // v48.10: the poll was the dongle strip's — restart
+        // it as the TV watch, so a cast to a TV is still
+        // found after leaving Chromecast mode.
+        startCastStatusPoll();
+        rebuildRemoteCastRow();
+        setCastMode(false);
+        showCachedState();
+        resizeTouchpad();
+    }
+
+    /** Select a Chromecast and open the strip for it — the
+     *  always-select half of toggleCastStrip. The Settings
+     *  and setup lists use this: tapping one there returns
+     *  to the remote with the strip open, never toggles it
+     *  off when it was already selected. */
+    private void openCastStrip(CastMedia.CastDevice e) {
+        selectedCast = e;
+        currentCast = e;
+        currentCastStatus = null;
+        castStripNowView.setText("Connecting…");
+        castStripPlayPauseButton.setText("Play");
+        castStripPlayPauseButton.setEnabled(false);
+        castStripPlayPauseButton.setAlpha(0.4f);
+        castStripStopButton.setEnabled(false);
+        castStripStopButton.setAlpha(0.4f);
+        castStripSkipAdButton.setEnabled(false);
+        castStripSkipAdButton.setAlpha(0.4f);
+        castStrip.setVisibility(View.VISIBLE);
+        rebuildRemoteCastRow();
+        refreshCastStatus();
+        startCastStatusPoll();
+        setCastMode(true);
+        // v48.9: the strip is laid out after this call returns
+        // — shrink the pad once its height is known, so the
+        // whole remote still fits on one screen.
+        castStrip.post(new Runnable() {
+            @Override public void run() { resizeTouchpad(); }
+        });
+    }
+
+    /** True while the inline strip is actually on screen: the
+     *  remote screen is showing and a Chromecast is selected.
+     *  The strip's own flag alone is not enough — it stays
+     *  VISIBLE while the remote is hidden behind Settings. */
+    private boolean castStripVisible() {
+        return remoteScroll != null && remoteScroll.getVisibility() == View.VISIBLE
+                && castStrip != null && castStrip.getVisibility() == View.VISIBLE;
+    }
+
+    /** v48.9: Chromecast mode — with a Chromecast selected,
+     *  every control that talks to the TV goes dim + dead, so
+     *  it is obvious the screen is not driving a TV. The TV
+     *  pills, the Chromecast pill, the gear, the bottom slider
+     *  (it drives the Chromecast now) and the strip's own
+     *  buttons stay live. Deselecting restores the TV controls
+     *  — enabled only if the TV is paired, the way
+     *  setControlsEnabled leaves the unpaired state.
+     *  v48.12: the pad is the one exception — it stays enabled
+     *  in cast mode so its double-tap can skip an ad on the
+     *  dongle, dimmed like the rest so it still reads as
+     *  mostly inactive. Swipes stay dead (see padTouchUp). */
+    private void setCastMode(boolean castOn) {
+        boolean tvOn = authToken != null && !authToken.isEmpty();
+        float dim = castOn ? 0.4f : 1f;
+        // v48.12: the pad stays live in cast mode — dimmed,
+        // not disabled. padTouchUp routes its double-tap to
+        // SKIP_AD and swallows its swipes while a dongle is
+        // selected, so no TV key can leak through.
+        // v48.13: dim the drawn disc, not the pad container —
+        // the hint is a child of the pad, so dimming the
+        // container dimmed the hint too (0.4 x 0.5 = 0.2,
+        // unreadable). The hint stays full brightness.
+        if (touchpadView != null) {
+            touchpadView.setAlpha(1f);
+            setEnabledDeep(touchpadView, castOn || tvOn);
+        }
+        if (touchpadRingView != null) touchpadRingView.setAlpha(dim);
+        setCastDim(navRowView, castOn, tvOn, dim);
+        setCastDim(playbackRowView, castOn, tvOn, dim);
+        setCastDim(appRowView, castOn, tvOn, dim);
+        setCastDim(speakerIcon, castOn, tvOn, dim);
+        setCastDim(powerToggleButton, castOn, tvOn, dim);
+        // v48.12: say what the pad does now — in cast mode a
+        // double-tap skips the ad on the dongle.
+        if (touchHintView != null) {
+            touchHintView.setText(castOn ? "Double-tap\nto skip ad"
+                    : "Swipe to move\nDouble-tap to select");
+            touchHintView.setAlpha(1f);
+        }
+        // The slider is the exception: in cast mode it drives
+        // the Chromecast, so it stays live; out of cast mode it
+        // goes back to the TV's paired state with the rest.
+        if (volumeBar != null) {
+            volumeBar.setEnabled(castOn || tvOn);
+            volumeBar.setAlpha(1f);
+        }
+    }
+
+    private void setCastDim(View v, boolean castOn, boolean tvOn, float dim) {
+        if (v == null) return;
+        setEnabledDeep(v, !castOn && tvOn);
+        v.setAlpha(dim);
+    }
+
+    /** v48.9: shrink the touchpad by the strip's height while
+     *  the strip is open, so the whole remote — pills, strip,
+     *  pad, buttons, apps, volume slider — still fits on one
+     *  screen with nothing cut off at the bottom. The strip's
+     *  height is measured after layout (see openCastStrip);
+     *  with it closed the pad returns to its full measured
+     *  size. Never below the 240 dp minimum from
+     *  buildTouchpad. No ScrollView: the pad's swipe gestures
+     *  must keep working. */
+    private void resizeTouchpad() {
+        if (touchpadView == null || touchpadFullDiameterPx <= 0) return;
+        int shrinkPx = 0;
+        if (castStrip != null && castStrip.getVisibility() == View.VISIBLE) {
+            shrinkPx = castStrip.getHeight();
+        }
+        int diameterPx = Math.max(touchpadFullDiameterPx - shrinkPx, dp(240));
+        touchpadSwipeRadiusPx = diameterPx / 2f + touchpadExpandPx;
+        LinearLayout.LayoutParams lp =
+                (LinearLayout.LayoutParams) touchpadView.getLayoutParams();
+        lp.height = diameterPx + 2 * touchpadExpandPx;
+        touchpadView.setLayoutParams(lp);
+        if (touchpadRingView != null) {
+            android.widget.FrameLayout.LayoutParams rlp =
+                    (android.widget.FrameLayout.LayoutParams) touchpadRingView.getLayoutParams();
+            rlp.width = diameterPx;
+            rlp.height = diameterPx;
+            touchpadRingView.setLayoutParams(rlp);
+        }
+        if (touchHintView != null) {
+            android.widget.FrameLayout.LayoutParams hlp =
+                    (android.widget.FrameLayout.LayoutParams) touchHintView.getLayoutParams();
+            hlp.width = (int) (diameterPx * 0.46f);
+            touchHintView.setLayoutParams(hlp);
+        }
+    }
+
+    /** v48.2: remember the known Chromecasts in prefs, like
+     *  the TV list — only ever written from a live discovery
+     *  that passed the v48.1 filter, never from code. */
+    private void saveCastList() {
+        if (prefs == null) return;
+        prefs.edit().putString("cast_list", CastMedia.encodeDevices(lastCast)).apply();
     }
 
     /** Width of one room pill, in px. The pills share the space
@@ -1389,8 +1821,71 @@ public class MainActivity extends Activity {
     /** Switch the remote to another TV. The buttons below now talk to
      *  that TV only — the previous TV's pairing is untouched, and the
      *  new TV's own token is loaded. */
+    /** v48.25: a manual TV pick — pill or found-list tap. Marks
+     *  the choice so the launch auto-select never overrides it,
+     *  then selects exactly like selectTv. */
+    private void selectTvByUser(final int index) {
+        userPickedTv = true;
+        selectTv(index);
+    }
+
+    /** v48.25: auto-select the TV that's on, launch only. Reads
+     *  fresh power for every paired TV (the launch fast read only
+     *  covers the selected one), then applies the rule once: if
+     *  exactly one TV is on, select it; otherwise keep the
+     *  last-selected TV. A failed read counts as unknown for the
+     *  decision — the cached value is NOT trusted, so a stale
+     *  cache can never pick the wrong TV. A success also refreshes
+     *  that TV's cached power, so switching TVs later shows real
+     *  state. Runs once: launchAutoSelectDone is set after the
+     *  first attempt, a manual tap before it lands always wins,
+     *  and it never runs again while the app is open. No-op with
+     *  fewer than two TVs, and never called from anywhere but
+     *  the launch path in onCreate. */
+    private void autoSelectTvOnLaunch() {
+        if (tvs.size() < 2) { launchAutoSelectDone = true; return; }
+        final int n = tvs.size();
+        final int launchSelected = selectedIndex;
+        // Snapshot IPs/tokens now — the scan may update them while
+        // the reads run, and the arrays may grow if a TV is added.
+        final String[] ips = new String[n];
+        final String[] auths = new String[n];
+        for (int i = 0; i < n; i++) { ips[i] = tvIps[i]; auths[i] = tvAuths[i]; }
+        runBg(new Runnable() {
+            @Override public void run() {
+                final int[] fresh = new int[n];
+                for (int i = 0; i < n; i++) {
+                    fresh[i] = -1;
+                    if (auths[i] != null && ips[i] != null) {
+                        Integer power = VizioApi.getPowerMode(ips[i], auths[i]);
+                        if (power != null) {
+                            fresh[i] = power;
+                            cachedPower[i] = power;
+                            saveCachedState(i);
+                        }
+                    }
+                }
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (launchAutoSelectDone) return;
+                        launchAutoSelectDone = true;
+                        // A manual tap always wins — never
+                        // override a selection the user made.
+                        if (userPickedTv || selectedIndex != launchSelected) return;
+                        int target = TvRegistry.autoSelectIndex(fresh, selectedIndex);
+                        if (target != selectedIndex) selectTv(target);
+                    }
+                });
+            }
+        });
+    }
+
     private void selectTv(final int index) {
         if (index < 0 || index >= tvs.size()) return;
+        // v48.9: tapping a TV pill is how you switch back to a
+        // TV — leave Chromecast mode first, so its controls
+        // come back (no-op when no Chromecast is selected).
+        closeCastStrip();
         if (index == selectedIndex) {
             // v26: a re-tap normally no-ops — but if the mirrors
             // were never loaded for this TV, currentIp stays null
@@ -1411,6 +1906,11 @@ public class MainActivity extends Activity {
             return;
         }
         selectedIndex = index;
+        // v48.10: a TV-cast strip belongs to the old TV —
+        // hide it, then check the new TV right away instead
+        // of waiting for the next poll tick.
+        hideTvCastStrip();
+        refreshTvCastStatus();
         prefs.edit().putInt("selected_tv", selectedIndex).apply();
         loadSelectedMirrors();
         updateSelectorButtons();
@@ -1430,6 +1930,13 @@ public class MainActivity extends Activity {
         // list already fetched for this TV), then confirm the fast
         // state in the background. v12: inputs live in Settings.
         showCachedState();
+        // v48.23: the main screen now shows this TV's CC + sleep
+        // timer too — repaint from the cache at once, then read
+        // both fresh in the background (the same two fast single
+        // reads Settings does on open).
+        updateMainCcSleepUi();
+        refreshCcState();
+        refreshSleepState();
         resetInputUi();
         refreshState();
     }
@@ -1444,6 +1951,19 @@ public class MainActivity extends Activity {
             // silver body, like the photo's black buttons.
             b.setBackground(roundedBg(selected ? COL_SURFACE2 : COL_PILL_OFF, 22));
             b.setTextColor(selected ? COL_ON_DARK : COL_TEXT);
+            // v48.7: the TV icon matches the pill's text
+            // colour — re-set on every repaint, since the
+            // selected pill is white-on-black and the others
+            // are dark-on-grey. v48.9: 12 dp, not 14 — same
+            // fit reason as the Cast icon (RoomPillTest).
+            // v48.10: a TV with an active cast session shows
+            // the Cast icon instead — same 12 dp, so nothing
+            // reflows; it is how the session reads at a glance.
+            boolean casting = i < tvCasting.length && tvCasting[i];
+            b.setCompoundDrawablesWithIntrinsicBounds(
+                    casting ? new CastIconDrawable(this, 12, selected ? COL_ON_DARK : COL_TEXT)
+                            : new TvIconDrawable(this, 12, selected ? COL_ON_DARK : COL_TEXT),
+                    null, null, null);
             // v29: a TV the latest scan did NOT find renders
             // dimmed (same 0.4 as the v26 disabled PAIR button)
             // — readable, but clearly not on this WiFi. Before
@@ -1792,6 +2312,26 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    /** v48.23: a quiet text control for the main screen — small
+     *  (11 sp) dimmed text on a transparent background, like the
+     *  Goodnight fix (v48.22). No pill, no dark background, so it
+     *  never competes with the TV pills or the pad. */
+    private Button quietTextButton(String text) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(11);
+        b.setTextColor(COL_MUTED);
+        b.setBackgroundColor(Color.TRANSPARENT);
+        b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinimumHeight(0);
+        b.setPadding(dp(4), 0, dp(4), 0);
+        applyPressAnimation(b); // v23: every button visibly presses
+        return b;
+    }
+
     // ---------- v11: volume number inside the slider thumb ----------
     // Reference picture: speaker icon, black track, and the volume
     // number inside a circle on the thumb ("73%"). The thumb is a
@@ -1849,6 +2389,98 @@ public class MainActivity extends Activity {
             }
             Paint.FontMetrics fm = textPaint.getFontMetrics();
             canvas.drawText(t, cx, cy - (fm.ascent + fm.descent) / 2f, textPaint);
+        }
+
+        @Override public int getIntrinsicWidth() { return sizePx; }
+        @Override public int getIntrinsicHeight() { return sizePx; }
+        @Override public void setAlpha(int alpha) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /** v48.7: the standard Cast symbol for the Chromecast
+     *  pill — a small rectangle with three arcs radiating
+     *  from its bottom-left corner, drawn with Canvas like
+     *  every other icon (never a font glyph). One drawable
+     *  per pill build, coloured to match the pill's text. */
+    private static class CastIconDrawable extends Drawable {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int sizePx;
+
+        CastIconDrawable(Context ctx, int sizeDp, int color) {
+            float density = ctx.getResources().getDisplayMetrics().density;
+            sizePx = Math.round(sizeDp * density);
+            paint.setColor(color);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1.5f, 0.09f * sizePx));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            android.graphics.Rect b = getBounds();
+            float s = Math.min(b.width(), b.height());
+            float stroke = paint.getStrokeWidth();
+            // Screen: rounded rect, inset so the stroke stays
+            // inside the bounds.
+            float left = b.left + stroke;
+            float top = b.top + stroke;
+            float right = b.right - stroke;
+            float bottom = b.bottom - stroke * 2;
+            canvas.drawRoundRect(left, top, right, bottom, s * 0.08f, s * 0.08f, paint);
+            // Arcs radiate from the rect's bottom-left corner,
+            // sweeping the up-right quarter (270 to 360 deg).
+            float cx = left;
+            float cy = bottom;
+            for (float r : new float[]{s * 0.18f, s * 0.30f, s * 0.42f}) {
+                canvas.drawArc(cx - r, cy - r, cx + r, cy + r, 270, 90, false, paint);
+            }
+        }
+
+        @Override public int getIntrinsicWidth() { return sizePx; }
+        @Override public int getIntrinsicHeight() { return sizePx; }
+        @Override public void setAlpha(int alpha) {}
+        @Override public void setColorFilter(ColorFilter cf) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    /** v48.7: the TV symbol for the TV pills — a small
+     *  rectangle screen with a stand, drawn with Canvas like
+     *  every other icon (never a font glyph). One drawable
+     *  per pill repaint, coloured to match the pill's text. */
+    private static class TvIconDrawable extends Drawable {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int sizePx;
+
+        TvIconDrawable(Context ctx, int sizeDp, int color) {
+            float density = ctx.getResources().getDisplayMetrics().density;
+            sizePx = Math.round(sizeDp * density);
+            paint.setColor(color);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1.5f, 0.09f * sizePx));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            android.graphics.Rect b = getBounds();
+            float s = Math.min(b.width(), b.height());
+            float stroke = paint.getStrokeWidth();
+            // Screen: rounded rect across the top of the square.
+            float left = b.left + stroke;
+            float top = b.top + stroke;
+            float right = b.right - stroke;
+            float bottom = b.top + s * 0.62f;
+            canvas.drawRoundRect(left, top, right, bottom, s * 0.08f, s * 0.08f, paint);
+            // Stand: a short stem from the screen's bottom
+            // centre, then a horizontal base.
+            float cx = b.exactCenterX();
+            float stemBottom = b.top + s * 0.80f;
+            canvas.drawLine(cx, bottom, cx, stemBottom, paint);
+            float baseY = b.top + s * 0.86f;
+            canvas.drawLine(cx - s * 0.22f, baseY, cx + s * 0.22f, baseY, paint);
         }
 
         @Override public int getIntrinsicWidth() { return sizePx; }
@@ -2354,6 +2986,11 @@ public class MainActivity extends Activity {
     // touches at/below the buttons.
     private TouchpadRingView touchpadRingView;
     private View navRowView;
+    // v48.9: the playback and app rows, saved at build like
+    // navRowView — cast mode dims them with the rest of the
+    // TV controls.
+    private LinearLayout playbackRowView;
+    private LinearLayout appRowView;
     // v33: radius of the invisible swipe area, 40 dp larger
     // than the visible ring on every side. Set in buildTouchpad.
     // v31: ACTION_UP time of the last single tap on the pad, 0
@@ -2531,7 +3168,20 @@ public class MainActivity extends Activity {
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
         int usableWidthPx = dm.widthPixels - dp(48); // root padding + pad margins
         int diameterPx = Math.min(usableWidthPx, (int) (dm.heightPixels * 0.45f));
-        diameterPx = Math.max(diameterPx, dp(240));
+        // v48.24: give back 12 dp for the CC/Sleep row (v48.23) —
+        // on the test phone the screen has no slack once that row exists
+        // (its text was half cut off at the bottom of the user's
+        // screenshot), so the pad shrinks slightly instead of
+        // pushing the row off screen. On the test phone the full size is
+        // 336 -> 324 dp; with the strip open it is 324 - ~81 =
+        // 243 dp, still above the 240 dp minimum. The 40 dp
+        // swipe area is untouched.
+        diameterPx = Math.max(diameterPx - dp(12), dp(240));
+        // v48.9: remember the full size — resizeTouchpad gives
+        // back the strip's height while it is open and restores
+        // this size when it closes.
+        touchpadFullDiameterPx = diameterPx;
+        touchpadExpandPx = dp(40);
         // v33: the swipe area is 40 dp larger than the ring on
         // every side, but the ring LOOK is unchanged. The pad
         // view is therefore taller/wider than the ring, and the
@@ -2539,7 +3189,7 @@ public class MainActivity extends Activity {
         // by the screen edge (the ring is already nearly as
         // wide as the screen); the extra height is real room
         // above and below the ring.
-        int expandPx = dp(40);
+        int expandPx = touchpadExpandPx;
         touchpadSwipeRadiusPx = diameterPx / 2f + expandPx;
         // v13: transparent — the black ring IS the touchpad, on
         // the silver body, like the photo. No white circle.
@@ -2547,8 +3197,10 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 diameterPx + 2 * expandPx);
-        lp.topMargin = dp(8);
-        lp.bottomMargin = dp(8);
+        // v48.24: 4 dp margins, not 8 — the CC/Sleep row needs
+        // the room (same fix as the 12 dp headroom above).
+        lp.topMargin = dp(4);
+        lp.bottomMargin = dp(4);
         pad.setLayoutParams(lp);
 
         // Apple TV remote look inside the circle (the user's reference):
@@ -2659,47 +3311,73 @@ public class MainActivity extends Activity {
             long upNow = System.currentTimeMillis();
             if (TouchpadGesture.isDoubleTap(lastTapUpTimeMs, upNow)) {
                 lastTapUpTimeMs = 0;
-                dimTouchHint();
                 // v19: centre-tap animation — ONLY on a double
                 // tap (Select), never on a swipe or a first tap.
                 // The centre button dips briefly so the user can see
                 // the Select landed, wherever the tap started.
                 if (touchpadRingView != null) touchpadRingView.animateCentreTap();
-                sendKey(VizioApi.KEY_NAV_SELECT, "Select");
+                // v48.12: with a Chromecast dongle selected, a
+                // double-tap skips the ad on the dongle instead
+                // of Select — same media message shape as the
+                // strip's Play/Pause/Stop, via castStripCommand.
+                if (selectedCast != null) {
+                    castStripCommand("SKIP_AD");
+                } else {
+                    sendKey(VizioApi.KEY_NAV_SELECT, "Select");
+                }
             } else {
                 lastTapUpTimeMs = upNow;
             }
             return true;
         }
         lastTapUpTimeMs = 0;
-        dimTouchHint();
+        // v48.12: swipes have no target on a dongle — swallow
+        // them in cast mode so no TV key is sent.
+        if (selectedCast != null) return true;
         int[] key = TouchpadGesture.keyFor(gesture);
         if (key != null) sendKey(key, TouchpadGesture.labelFor(gesture));
         return true;
     }
 
-    /** The hint never disappears for good (v12) — after the first
-     *  swipe or tap it just fades to half strength and stays
-     *  there, so the circle always says what it does. */
-    private void dimTouchHint() {
-        if (touchHintView != null) touchHintView.setAlpha(0.5f);
-    }
-
     private void showSettings() {
         if (setupScroll != null) setupScroll.setVisibility(View.GONE);
+        stopCastStatusPoll();
+        // v48.16: the remote is hidden — the countdown stops with the strip.
+        stopAdCountdownTicker();
+        // v48.20: the delayed buffering second send stops too.
+        stopBufferingSkipSecondSend();
         remoteScroll.setVisibility(View.GONE);
         settingsScroll.setVisibility(View.VISIBLE);
         updateSettingsFoundUi();
+        updateAutoSkipUi();
         refreshCcState();
         refreshSleepState();
         refreshPictureState();
+        // v48.2: this screen lists Chromecasts — keep discovery
+        // running while it is visible.
+        startCastDiscovery();
     }
 
     private void showRemote() {
         if (setupScroll != null) setupScroll.setVisibility(View.GONE);
+        stopCastStatusPoll();
         settingsScroll.setVisibility(View.GONE);
         remoteScroll.setVisibility(View.VISIBLE);
         refreshWifiStatus();
+        // v48.2: the remote screen lists Chromecasts too (the
+        // row under the pills) — keep discovery running here.
+        startCastDiscovery();
+        // v48.6: a selected Chromecast's strip is back on
+        // screen — resume its status poll, and read once now
+        // like opening the strip does. v48.10: with no dongle
+        // selected, start the TV watch instead — a cast may
+        // already be going to the selected TV.
+        if (castStripVisible()) {
+            refreshCastStatus();
+            startCastStatusPoll();
+        } else if (selectedCast == null) {
+            startCastStatusPoll();
+        }
     }
 
     @Override
@@ -2724,6 +3402,28 @@ public class MainActivity extends Activity {
         super.onBackPressed();
     }
 
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // v48.21: the phone's hardware volume keys drive the TV
+        // volume while the remote screen is showing — the same
+        // setVolumeTo the bottom slider uses, so the slider
+        // paints, the percentage updates, and a selected
+        // Chromecast still gets the Cast volume. Consumed here
+        // (true) so the phone's own media volume never moves
+        // too. In Settings or setup the keys behave as normal;
+        // the mute key is out of scope and is not consumed.
+        if (remoteScroll != null
+                && remoteScroll.getVisibility() == View.VISIBLE
+                && (keyCode == KeyEvent.KEYCODE_VOLUME_UP
+                        || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)) {
+            int delta = keyCode == KeyEvent.KEYCODE_VOLUME_UP
+                    ? VizioApi.VOLUME_KEY_STEP : -VizioApi.VOLUME_KEY_STEP;
+            setVolumeTo(VizioApi.stepVolume(volumeBar.getProgress(), delta));
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
     // ---------- v16: first-time setup (onboarding) ----------
 
     /** True when at least one TV has a pairing token on this phone. */
@@ -2742,11 +3442,20 @@ public class MainActivity extends Activity {
     private void showSetup() {
         remoteScroll.setVisibility(View.GONE);
         settingsScroll.setVisibility(View.GONE);
+        stopCastStatusPoll();
+        // v48.16: the remote is hidden — the countdown stops with the strip.
+        stopAdCountdownTicker();
+        // v48.20: the delayed buffering second send stops too.
+        stopBufferingSkipSecondSend();
         setupScroll.setVisibility(View.VISIBLE);
         refreshWifiStatus();
         updateSetupWifiUi();
         updateSetupFoundUi();
         updateSetupPairUi();
+        // v48.2: this screen lists Chromecasts — keep discovery
+        // running while it is visible (rediscover below restarts
+        // it cleanly when WiFi is already good).
+        startCastDiscovery();
         if (phoneOnWifi) {
             // WiFi is already good — find the TVs right away so
             // the user only has to tap one, then pair it.
@@ -2794,6 +3503,32 @@ public class MainActivity extends Activity {
         return "Name unknown — " + d.ip;
     }
 
+    /** v48: the Chromecasts known on this WiFi — live ones
+     *  and remembered last-seen ones alike, one button each
+     *  in the same found-devices list as the TVs (setup Step 2
+     *  and Settings). Tapping one returns to the remote
+     *  screen with that Chromecast selected and the strip
+     *  open (v48.7: the separate control view is deleted);
+     *  Chromecasts are never added to the TV registry and
+     *  never paired. Nothing is shown when none are known —
+     *  no crash, no noise. */
+    private void addCastButtons(LinearLayout layout, final boolean fromSettings) {
+        if (layout == null || lastCast.isEmpty()) return;
+        TextView help = mutedText("Chromecasts on this WiFi — tap one to control it:", 14);
+        help.setPadding(0, dp(8), 0, 0);
+        layout.addView(help);
+        for (final CastMedia.CastDevice e : lastCast) {
+            Button b = optionButton(e.label(), false);
+            b.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    showRemote();
+                    if (selectedCast != e) openCastStrip(e);
+                }
+            });
+            layout.addView(b);
+        }
+    }
+
     /** Step 2 — the TVs found by the LAST LIVE SCAN, one button
      *  each. v21: this list is ONLY what the scan actually found
      *  on this WiFi — before any scan it is EMPTY ("No TVs found
@@ -2831,6 +3566,8 @@ public class MainActivity extends Activity {
             if (setupFindStatusView != null) {
                 setupFindStatusView.setText("No Vizio TVs found on this WiFi. Check they're on and on the same WiFi, then tap FIND MY TVs again.");
             }
+            // v48: no TVs, but Chromecasts may still be here.
+            addCastButtons(setupFoundLayout, false);
             return;
         }
         if (setupFindStatusView != null) {
@@ -2849,7 +3586,7 @@ public class MainActivity extends Activity {
             b.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     int index = addTv(d);
-                    selectTv(index);
+                    selectTvByUser(index);
                     // v22: always repaint + restate the selection,
                     // even when this TV was already selected —
                     // selectTv() no-ops on a re-tap, and in v21
@@ -2882,6 +3619,8 @@ public class MainActivity extends Activity {
                 setupFoundLayout.addView(hint);
             }
         }
+        // v48: Chromecasts found on the same scan, below the TVs.
+        addCastButtons(setupFoundLayout, false);
     }
 
     /** v34: the TVs found by the LAST LIVE SCAN, listed in
@@ -2899,7 +3638,11 @@ public class MainActivity extends Activity {
         for (ScanLogic.TvDevice d : lastScan) {
             if (ScanLogic.looksLikeVizio(d)) found.add(d);
         }
-        if (found.isEmpty()) return;
+        if (found.isEmpty()) {
+            // v48: no TVs, but Chromecasts may still be here.
+            addCastButtons(settingsFoundLayout, true);
+            return;
+        }
         TextView help = mutedText("Tap a TV below to add it, then pair it in \"Pair with the TV\" below.", 14);
         help.setPadding(0, dp(8), 0, 0);
         settingsFoundLayout.addView(help);
@@ -2914,7 +3657,7 @@ public class MainActivity extends Activity {
             b.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     int index = addTv(d);
-                    selectTv(index);
+                    selectTvByUser(index);
                     updateSettingsFoundUi();
                     updateSetupFoundUi();
                     updatePairUi();
@@ -2936,6 +3679,729 @@ public class MainActivity extends Activity {
                 settingsFoundLayout.addView(hint);
             }
         }
+        // v48: Chromecasts found on the same scan, below the TVs.
+        addCastButtons(settingsFoundLayout, true);
+    }
+
+    // ---------- v48: Chromecast discovery (mDNS) ----------
+
+    /** Start continuous mDNS discovery for _googlecast._tcp.
+     *  Android's NsdManager does the multicast — no Play
+     *  Services, no Cast SDK, same as the SSDP scan for the
+     *  TVs. Found services resolve to an IP, then land in
+     *  lastCast and repaint the found-devices lists and the
+     *  remote row. v48.2: no more 6-second round — services
+     *  resolve late and a cut-off round dropped them, which is
+     *  why a Chromecast showed up only once in a while.
+     *  Discovery runs while a screen that lists Chromecasts is
+     *  visible (remote, setup, Settings) and stops on
+     *  onPause/onDestroy. Idempotent: a running round is left
+     *  alone, so in-flight resolves are never dropped. Safe to
+     *  call when no Chromecasts exist — the lists just stay
+     *  TV-only. */
+    private void startCastDiscovery() {
+        if (castDiscovering) return;
+        NsdManager nsd;
+        try {
+            nsd = (NsdManager) getSystemService(Context.NSD_SERVICE);
+        } catch (Exception e) {
+            return;
+        }
+        if (nsd == null) return;
+        castNsd = nsd;
+        castDiscoveryListener = new NsdManager.DiscoveryListener() {
+            @Override public void onDiscoveryStarted(String regType) {
+                castDiscovering = true;
+            }
+            @Override public void onServiceFound(NsdServiceInfo service) {
+                // v48.4: queue a serialized resolve — resolving
+                // everything at once with one listener starved
+                // the callbacks (two of three never resolved).
+                queueCastResolve(service);
+            }
+            @Override public void onServiceLost(NsdServiceInfo service) {
+                if (service != null) {
+                    // v48.4: never resolve a lost service.
+                    castResolveQueue.remove(service.getServiceName());
+                    castResolveByName.remove(service.getServiceName());
+                }
+                onCastServiceLost(service);
+            }
+            @Override public void onDiscoveryStopped(String serviceType) {
+                castDiscovering = false;
+            }
+            @Override public void onStartDiscoveryFailed(String serviceType, int errorCode) {
+                castDiscovering = false;
+                // A failed start leaves discovery dead until the
+                // next resume or Refresh retries it.
+            }
+            @Override public void onStopDiscoveryFailed(String serviceType, int errorCode) {
+                castDiscovering = false;
+            }
+        };
+        try {
+            nsd.discoverServices("_googlecast._tcp", NsdManager.PROTOCOL_DNS_SD, castDiscoveryListener);
+        } catch (Exception e) {
+            return;
+        }
+        // Set at once, not only in onDiscoveryStarted, so a
+        // second start in the same instant cannot double-start.
+        castDiscovering = true;
+    }
+
+    /** Queue a found service for a serialized resolve (one at
+     *  a time — concurrent resolves with one shared listener
+     *  starve callbacks). A re-announced service already
+     *  queued or resolving is never queued twice. */
+    private void queueCastResolve(NsdServiceInfo service) {
+        if (service == null || service.getServiceName() == null) return;
+        String name = service.getServiceName();
+        castResolveByName.put(name, service);
+        if (castResolveQueue.enqueue(name)) pumpCastResolve();
+    }
+
+    /** Start the next queued resolve, if none is in flight.
+     *  Each attempt gets a fresh listener, so a late callback
+     *  from a timed-out attempt is ignored by token. */
+    private void pumpCastResolve() {
+        if (castResolving || castNsd == null) return;
+        final String name = castResolveQueue.beginNext();
+        if (name == null) return;
+        final NsdServiceInfo service = castResolveByName.get(name);
+        if (service == null) {
+            pumpCastResolve();
+            return;
+        }
+        castResolving = true;
+        castResolveName = name;
+        final int token = ++castResolveToken;
+        final NsdManager.ResolveListener listener = new NsdManager.ResolveListener() {
+            @Override public void onResolveFailed(NsdServiceInfo s, int errorCode) {
+                if (token != castResolveToken) return; // stale attempt
+                onCastResolveFailed(name);
+            }
+            @Override public void onServiceResolved(NsdServiceInfo s) {
+                if (token != castResolveToken) return; // stale attempt
+                onCastResolveSucceeded(name, s);
+            }
+        };
+        castResolveTimeout = new Runnable() {
+            @Override public void run() {
+                if (token != castResolveToken) return; // stale attempt
+                onCastResolveFailed(name); // no callback in time = failure
+            }
+        };
+        castResolveHandler.postDelayed(castResolveTimeout, CastMedia.RESOLVE_TIMEOUT_MS);
+        try {
+            castNsd.resolveService(service, listener);
+        } catch (Exception e) {
+            onCastResolveFailed(name);
+        }
+    }
+
+    /** One resolve came back: forget its failures, run the
+     *  normal resolved path, then resolve the next service. */
+    private void onCastResolveSucceeded(String name, NsdServiceInfo service) {
+        cancelCastResolveTimeout();
+        castResolving = false;
+        castResolveName = null;
+        castResolveQueue.finish(name);
+        castResolveRetry.reset(name);
+        onCastServiceResolved(service);
+        pumpCastResolve();
+    }
+
+    /** One resolve failed (or timed out): retry up to 3
+     *  attempts with a short backoff, then leave the service
+     *  listed as unresolved — never silently dropped. The
+     *  next queued service resolves now, so one slow service
+     *  never blocks the rest. */
+    private void onCastResolveFailed(final String name) {
+        cancelCastResolveTimeout();
+        castResolving = false;
+        castResolveName = null;
+        castResolveQueue.finish(name);
+        boolean retry = castResolveRetry.noteFailure(name);
+        if (retry) {
+            castResolveHandler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (!castDiscovering) return;
+                    castResolveQueue.enqueue(name);
+                    pumpCastResolve();
+                }
+            }, CastMedia.RESOLVE_BACKOFF_MS);
+        }
+        pumpCastResolve();
+    }
+
+    private void cancelCastResolveTimeout() {
+        if (castResolveTimeout != null) {
+            castResolveHandler.removeCallbacks(castResolveTimeout);
+            castResolveTimeout = null;
+        }
+    }
+
+    /** Refresh: stop the round, demote live entries to
+     *  last-seen (they stay listed until found again — a
+     *  single missed round never empties the list), then start
+     *  a fresh continuous round. */
+    private void restartCastDiscovery() {
+        stopCastDiscovery();
+        CastMedia.demoteDevices(lastCast);
+        updateSetupFoundUi();
+        updateSettingsFoundUi();
+        rebuildRemoteCastRow();
+        startCastDiscovery();
+    }
+
+    /** Stop discovery, if one is running. Safe to call
+     *  with nothing running (fresh start, onDestroy, onPause).
+     *  v48.4: also drops the resolve queue and invalidates
+     *  any in-flight resolve, so a late callback can never
+     *  act after discovery stopped. */
+    private void stopCastDiscovery() {
+        if (castDiscovering && castNsd != null && castDiscoveryListener != null) {
+            try { castNsd.stopServiceDiscovery(castDiscoveryListener); }
+            catch (Exception ignored) {}
+        }
+        castDiscovering = false;
+        cancelCastResolveTimeout();
+        castResolveToken++;
+        castResolving = false;
+        castResolveName = null;
+        castResolveQueue.clear();
+        castResolveByName.clear();
+        castResolveRetry.clear();
+    }
+
+    /** One resolved _googlecast._tcp service: its IP from the
+     *  resolve, its name from the device itself (TXT "fn", else
+     *  the service instance name). v48.1: a TV's built-in Cast
+     *  is filtered out here (TXT "md" + known TV IP) before it
+     *  can list — and before it can be persisted. v48.2: a
+     *  service seen twice (re-announce) updates its IP/name in
+     *  place and goes live again; a new one is added live and
+     *  remembered in prefs, so a later missed round still
+     *  shows it as last-seen. */
+    private void onCastServiceResolved(NsdServiceInfo service) {
+        if (service == null) return;
+        InetAddress host = service.getHost();
+        if (host == null) return;
+        String ip = host.getHostAddress();
+        if (ip == null || ip.isEmpty()) return;
+        Map<String, String> txt = new HashMap<>();
+        Map<String, byte[]> attrs = service.getAttributes();
+        if (attrs != null) {
+            for (Map.Entry<String, byte[]> e : attrs.entrySet()) {
+                if (e.getKey() == null || e.getValue() == null) continue;
+                txt.put(e.getKey(), new String(e.getValue(), Charset.forName("UTF-8")));
+            }
+        }
+        // v48.1: a Vizio TV advertises _googlecast._tcp too, so
+        // its built-in Cast would list as a Chromecast. Skip
+        // anything whose TXT model is not a Chromecast, or whose
+        // IP is a known TV IP — a filtered-out TV never reaches
+        // the list, and never reaches prefs either.
+        if (!CastMedia.isRealChromecast(txt, ip, tvIps)) return;
+        String name = CastMedia.friendlyName(service.getServiceName(), txt);
+        if (name == null || name.isEmpty()) return;
+        final CastMedia.CastDevice entry = new CastMedia.CastDevice(
+                service.getServiceName(), name, ip, txt.get("md"));
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                CastMedia.upsertDevice(lastCast, entry);
+                saveCastList();
+                updateSetupFoundUi();
+                updateSettingsFoundUi();
+                rebuildRemoteCastRow();
+            }
+        });
+    }
+
+    /** A Chromecast left the network — it is only demoted to
+     *  last-seen, never removed: it stays listed (and
+     *  remembered) until discovery finds it again. v48.2. */
+    private void onCastServiceLost(NsdServiceInfo service) {
+        if (service == null || service.getServiceName() == null) return;
+        final String name = service.getServiceName();
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                boolean changed = false;
+                for (int i = 0; i < lastCast.size(); i++) {
+                    if (name.equals(lastCast.get(i).serviceName) && lastCast.get(i).live) {
+                        lastCast.get(i).live = false;
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    updateSetupFoundUi();
+                    updateSettingsFoundUi();
+                    rebuildRemoteCastRow();
+                }
+            }
+        });
+    }
+
+    // ---------- v48: Chromecast status + commands (strip only) ----------
+
+    /** Start the while-open status poll (first tick one
+     *  interval out — the open read above covers the open). */
+    private void startCastStatusPoll() {
+        castStatusHandler.removeCallbacks(castStatusPoll);
+        castStatusHandler.postDelayed(castStatusPoll, CastMedia.CAST_STATUS_POLL_MS);
+    }
+
+    /** Stop the status poll — the view closed, or the app
+     *  went to the background. Nothing polls while hidden. */
+    private void stopCastStatusPoll() {
+        castStatusHandler.removeCallbacks(castStatusPoll);
+    }
+
+    /** v48.16: seconds of ad-clip playback since the last
+     *  successful status poll — the countdown's estimate of
+     *  where the clip is now. Zero when the clip is paused
+     *  (a paused clip does not advance) or no poll has
+     *  landed yet. */
+    private double adCountdownElapsedSeconds(CastMedia.MediaStatus st) {
+        if (st == null || !st.isPlaying() || lastCastStatusPollUptimeMs == 0) return 0;
+        return (SystemClock.uptimeMillis() - lastCastStatusPollUptimeMs) / 1000.0;
+    }
+
+    /** v48.16: start the countdown ticker while the strip is
+     *  open on a break that is not skippable yet; stop it the
+     *  moment the strip closes, the break ends, or the ad is
+     *  already skippable (the line already says so). Called
+     *  after every strip paint. */
+    private void updateAdCountdownTicker() {
+        if (!castStripVisible()) { stopAdCountdownTicker(); return; }
+        CastMedia.MediaStatus st = selectedCast != null ? currentCastStatus : currentTvCastStatus;
+        if (st == null || st.breakClipId == null || st.breakClipId.isEmpty()
+                || st.whenSkippable == null) {
+            stopAdCountdownTicker();
+            return;
+        }
+        if (st.isSkippableAd(adCountdownElapsedSeconds(st))) {
+            stopAdCountdownTicker();
+            return;
+        }
+        castStatusHandler.removeCallbacks(castAdCountdownTick);
+        castStatusHandler.postDelayed(castAdCountdownTick, CastMedia.CAST_AD_COUNTDOWN_TICK_MS);
+    }
+
+    /** v48.16: stop the countdown ticker — the strip closed
+     *  or the break ended. */
+    private void stopAdCountdownTicker() {
+        castStatusHandler.removeCallbacks(castAdCountdownTick);
+    }
+
+    /** One live status read for the selected Chromecast, on
+     *  the background thread. Paints only when the strip is
+     *  still on screen for this device — the user may have
+     *  hidden the strip while the read was in flight. */
+    private void refreshCastStatus() {
+        if (currentCast == null || castBusy || !castStripVisible()) return;
+        castBusy = true;
+        final String ip = currentCast.ip;
+        runBg(new Runnable() {
+            @Override public void run() {
+                CastMedia.MediaStatus st = null;
+                try {
+                    CastVolume.Client client = castClientFor("cast:" + ip);
+                    st = client.getCastStatus(ip);
+                } catch (Exception e) {
+                    st = null;
+                }
+                // v48.5: a failed re-read keeps the last good
+                // status instead of blanking the screen.
+                final CastMedia.MediaStatus status = CastMedia.keepStatus(currentCastStatus, st);
+                // v48.16: a fresh read re-times the countdown —
+                // the ticker counts down from this poll.
+                final boolean fresh = st != null;
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        castBusy = false;
+                        if (currentCast == null || !currentCast.ip.equals(ip)) return;
+                        if (fresh) lastCastStatusPollUptimeMs = SystemClock.uptimeMillis();
+                        currentCastStatus = status;
+                        paintCastStatus(status);
+                        // v48.15: auto-skip — the strip is open, so a skippable ad is skipped by itself.
+                        maybeAutoSkipAd(status);
+                        // v48.20: auto-skip on BUFFERING — the built-in receiver never reports ads.
+                        maybeBufferingSkipAd(status);
+                        // v48.16: the countdown ticks while a break is playing.
+                        updateAdCountdownTicker();
+                    }
+                });
+            }
+        });
+    }
+
+    /** Paint the strip from a live status. Null means the
+     *  device did not answer at all — the strip says so in
+     *  one short line and the 5 s poll retries on its own, so
+     *  there is no Refresh instruction to follow. Idle (no
+     *  app) leaves Play and Stop dimmed — there is nothing
+     *  to command. */
+    private void paintCastStatus(CastMedia.MediaStatus st) {
+        if (st == null) {
+            // v48.7: short line only — the strip retries via
+            // the poll while it stays open.
+            castStripNowView.setText("Couldn't reach this Chromecast — check it's on and on WiFi.");
+            castStripPlayPauseButton.setText("Play");
+            castStripPlayPauseButton.setEnabled(false);
+            castStripPlayPauseButton.setAlpha(0.4f);
+            castStripStopButton.setEnabled(false);
+            castStripStopButton.setAlpha(0.4f);
+            castStripSkipAdButton.setEnabled(false);
+            castStripSkipAdButton.setAlpha(0.4f);
+            // v48.2: a device that does not answer is only
+            // marked unreachable (last-seen) — the entry stays
+            // in the lists, it is never deleted on one failure.
+            if (currentCast != null && currentCast.live) {
+                currentCast.live = false;
+                rebuildRemoteCastRow();
+            }
+            return;
+        }
+        boolean canControl = st.hasApp() && !st.isIdle() && st.mediaSessionId != null;
+        // v48.6: the strip mirrors the status — same button
+        // state, its own now-playing line (idle reads
+        // "Nothing casting right now"). v48.7: no volume
+        // here — the TV's volume slider handles volume.
+        // v48.9: the bottom slider follows the Chromecast's
+        // volume while one is selected — the poll re-reads it
+        // every 5 s. Never while the user is dragging it.
+        castStripNowView.setText(CastMedia.stripNowLine(st, adCountdownElapsedSeconds(st)));
+        castStripPlayPauseButton.setText(st.isPlaying() ? "Pause" : "Play");
+        castStripPlayPauseButton.setEnabled(canControl);
+        castStripPlayPauseButton.setAlpha(canControl ? 1f : 0.4f);
+        castStripStopButton.setEnabled(canControl);
+        castStripStopButton.setAlpha(canControl ? 1f : 0.4f);
+        castStripSkipAdButton.setEnabled(canControl);
+        castStripSkipAdButton.setAlpha(canControl ? 1f : 0.4f);
+        if (st.volumeLevel != null && !volumeDragging) {
+            int castVol = (int) Math.round(st.volumeLevel * 100);
+            volumeBar.setProgress(castVol);
+            updateVolumeThumb(castVol);
+            volumeView.setText("Volume: " + castVol);
+        }
+    }
+
+    /** Play when paused, Pause when playing — the button label
+     *  says what the next tap sends, same as the TV's. The
+     *  strip drives the dongle when one is selected, else the
+     *  selected TV's cast session (v48.10). */
+    private void castPlayPause() {
+        if (castBusy) return;
+        if (selectedCast != null) {
+            if (currentCastStatus == null) return;
+            castMediaCommand(currentCastStatus.isPlaying() ? "PAUSE" : "PLAY");
+        } else {
+            if (currentTvCastStatus == null) return;
+            tvCastMediaCommand(currentTvCastStatus.isPlaying() ? "PAUSE" : "PLAY");
+        }
+    }
+
+    /** One media command on whatever the strip is showing —
+     *  the dongle when one is selected, else the selected
+     *  TV's cast session (v48.10). The Stop button uses
+     *  this; Play/Pause goes through castPlayPause; a pad
+     *  double-tap in cast mode sends SKIP_AD through it
+     *  (v48.12). */
+    private void castStripCommand(String type) {
+        if (selectedCast != null) {
+            castMediaCommand(type);
+            return;
+        }
+        tvCastMediaCommand(type);
+    }
+
+    /** v48.15: auto-skip ads — on by default (prefs). */
+    private boolean autoSkipAdsOn() {
+        return prefs == null || prefs.getBoolean(PREF_AUTO_SKIP_ADS, true);
+    }
+
+    /** v48.15: auto-skip — called on every fresh strip status. When
+     *  the switch is on and the status shows a skippable ad, SKIP_AD
+     *  goes out by itself, once per break clip: the (session, clip)
+     *  key is remembered, so a receiver that ignores SKIP_AD is not
+     *  spammed one message per poll tick. The key clears when the
+     *  break ends (no clip) or the session changes (a new session id
+     *  makes a new key). Manual Skip Ad / double-tap bypass this
+     *  guard — they send on every tap. Only called while the strip
+     *  is open: the dongle path guards it in refreshCastStatus, and
+     *  the TV path only paints while the session is active and the
+     *  strip is showing. */
+    private void maybeAutoSkipAd(CastMedia.MediaStatus st) {
+        if (st == null || st.breakClipId == null || st.breakClipId.isEmpty()) {
+            lastAutoSkippedAdKey = null;
+            return;
+        }
+        if (!castStripVisible()) return;
+        if (!autoSkipAdsOn() || !st.isSkippableAd()) return;
+        String key = st.mediaSessionId + "|" + st.breakClipId;
+        if (key.equals(lastAutoSkippedAdKey)) return;
+        lastAutoSkippedAdKey = key;
+        castStripCommand("SKIP_AD");
+    }
+
+    /** v48.20: auto-skip on BUFFERING — called on every strip
+     *  status next to maybeAutoSkipAd. The Vizio built-in
+     *  receiver never reports ads (a confirmed ad still reads
+     *  as the movie, BUFFERING), so a BUFFERING status is
+     *  worth a SKIP_AD attempt — the receiver ignores it when
+     *  no skippable ad is playing. At most 3 sends per
+     *  buffering episode: once when BUFFERING is first seen,
+     *  once more ~6 s later and a third ~12 s after the
+     *  episode started (the delayed runnable; the 5 s
+     *  poll is the backstop and lands a missed send at the
+     *  next tick). A non-BUFFERING
+     *  status, or a null one, ends the episode. The v48.15
+     *  breakStatus auto-skip is untouched and still runs
+     *  first on receivers that report breakStatus. */
+    private void maybeBufferingSkipAd(CastMedia.MediaStatus st) {
+        if (st == null || !"BUFFERING".equals(st.playerState)) {
+            bufferingSkipGuard.reset();
+            return;
+        }
+        if (!castStripVisible()) return;
+        if (!bufferingSkipGuard.shouldSend(SystemClock.uptimeMillis(), st.mediaSessionId,
+                st.playerState, autoSkipAdsOn())) return;
+        castStripCommand("SKIP_AD");
+        if (bufferingSkipGuard.sends() == 1) {
+            castStatusHandler.removeCallbacks(bufferingSkipSecondSend);
+            castStatusHandler.postDelayed(bufferingSkipSecondSend,
+                    CastMedia.BufferingSkipGuard.SECOND_SEND_DELAY_MS);
+        } else if (bufferingSkipGuard.sends() == 2) {
+            // v48.27: third try — same runnable, 6 s after the
+            // second send, i.e. ~12 s after the episode started.
+            castStatusHandler.removeCallbacks(bufferingSkipSecondSend);
+            castStatusHandler.postDelayed(bufferingSkipSecondSend,
+                    CastMedia.BufferingSkipGuard.THIRD_SEND_DELAY_MS
+                            - CastMedia.BufferingSkipGuard.SECOND_SEND_DELAY_MS);
+        }
+    }
+
+    /** v48.20: the delayed second send must not fire after
+     *  the strip closed or the app went away. v48.27: the
+     *  same runnable now also carries the third send, so
+     *  stopping it cancels both. */
+    private void stopBufferingSkipSecondSend() {
+        castStatusHandler.removeCallbacks(bufferingSkipSecondSend);
+    }
+
+    /** One media command (PLAY, PAUSE or STOP) on the
+     *  selected Chromecast, then a fresh status read so the
+     *  strip shows what actually happened — after a short
+     *  beat, so the re-read does not catch the receiver's
+     *  transient BUFFERING state (v48.5: an immediate re-read
+     *  froze the strip on "Buffering…" + Play after a Play
+     *  that worked). A command that did not take says so in
+     *  the now-playing line — never a popup. */
+    private void castMediaCommand(final String type) {
+        if (currentCast == null || castBusy) return;
+        final String ip = currentCast.ip;
+        castBusy = true;
+        runBg(new Runnable() {
+            @Override public void run() {
+                boolean ok = false;
+                try {
+                    CastVolume.Client client = castClientFor("cast:" + ip);
+                    ok = client.mediaCommand(ip, type);
+                } catch (Exception e) {
+                    ok = false;
+                }
+                final boolean sent = ok;
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        castBusy = false;
+                        if (currentCast == null || !currentCast.ip.equals(ip)) return;
+                        if (!sent) {
+                            castStripNowView.setText("That didn't take — check the Chromecast is on and on WiFi.");
+                            return;
+                        }
+                        // v48.5: give the receiver a beat to
+                        // catch up before re-reading.
+                        castStatusHandler.postDelayed(new Runnable() {
+                            @Override public void run() { refreshCastStatus(); }
+                        }, CastMedia.CAST_STATUS_SETTLE_MS);
+                    }
+                });
+            }
+        });
+    }
+
+    // ---------- v48.10: casting TO a TV (SmartCast built-in Cast) ----------
+
+    /** The IP to reach a TV's built-in Cast receiver — the
+     *  slot's IP when known, else the last IP the scan saw. */
+    private String tvCastIp(int index) {
+        if (index < 0 || index >= tvs.size()) return null;
+        String ip = (index < tvIps.length) ? tvIps[index] : null;
+        if (ip == null || ip.isEmpty()) {
+            TvRegistry.TvInfo tv = tvs.get(index);
+            ip = tv == null ? null : tv.lastIp;
+        }
+        return (ip == null || ip.isEmpty()) ? null : ip;
+    }
+
+    /** Watch the TVs' built-in Cast receivers for a cast
+     *  session — one status read per TV with a known IP, on
+     *  the background thread. A TV with an active session
+     *  gets the Cast pill icon; the selected TV's session
+     *  drives the strip. No session — or no answer — hides
+     *  the strip again. The poll keeps running while the
+     *  remote is on screen, so a session starting later is
+     *  still found. */
+    private void refreshTvCastStatus() {
+        if (castBusy || selectedCast != null || !hasTv()) return;
+        final int selIndex = selectedIndex;
+        final String[] ips = new String[tvs.size()];
+        for (int i = 0; i < tvs.size(); i++) ips[i] = tvCastIp(i);
+        castBusy = true;
+        runBg(new Runnable() {
+            @Override public void run() {
+                final CastMedia.MediaStatus[] results = new CastMedia.MediaStatus[ips.length];
+                for (int i = 0; i < ips.length; i++) {
+                    if (ips[i] == null) continue;
+                    try {
+                        CastVolume.Client client = castClientFor("tvcast:" + ips[i]);
+                        results[i] = client.getCastStatus(ips[i]);
+                    } catch (Exception e) {
+                        results[i] = null;
+                    }
+                }
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        castBusy = false;
+                        if (selectedCast != null) return;
+                        boolean iconsChanged = false;
+                        for (int i = 0; i < results.length && i < tvCasting.length; i++) {
+                            // v48.11: no answer is unknown, not
+                            // ended — keep the last known state
+                            // and let the next tick retry. Only a
+                            // real answer clears a session.
+                            if (results[i] == null) continue;
+                            boolean active = results[i].isActiveCast();
+                            if (tvCasting[i] != active) {
+                                tvCasting[i] = active;
+                                iconsChanged = true;
+                            }
+                        }
+                        if (iconsChanged) updateSelectorButtons();
+                        // The strip follows the SELECTED TV only —
+                        // the user may have switched TVs mid-read.
+                        // A null read leaves the strip (and
+                        // currentTvCastStatus) as they were.
+                        if (selIndex >= 0 && selIndex == selectedIndex
+                                && selIndex < results.length
+                                && results[selIndex] != null) {
+                            // v48.16: a fresh read re-times the countdown.
+                            lastCastStatusPollUptimeMs = SystemClock.uptimeMillis();
+                            currentTvCastStatus = results[selIndex];
+                            paintTvCastStatus(results[selIndex]);
+                            // v48.16: the countdown ticks while a break is playing.
+                            updateAdCountdownTicker();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /** Paint the strip from the selected TV's cast session —
+     *  it only exists while the session is active. Idle,
+     *  ended, or unanswered hides it again (and the pill
+     *  icon goes back to the TV with it). The TV controls
+     *  stay live throughout — unlike Chromecast mode, the
+     *  D-pad still works inside the casted app. */
+    private void paintTvCastStatus(CastMedia.MediaStatus st) {
+        if (st == null || !st.isActiveCast()) {
+            // v48.15: the session ended — the break is over, so the auto-skip guard resets.
+            maybeAutoSkipAd(st);
+            // v48.20: same reset for the buffering episode.
+            maybeBufferingSkipAd(st);
+            hideTvCastStrip();
+            return;
+        }
+        castStripNowView.setText(CastMedia.stripNowLine(st, adCountdownElapsedSeconds(st)));
+        castStripPlayPauseButton.setText(st.isPlaying() ? "Pause" : "Play");
+        castStripPlayPauseButton.setEnabled(true);
+        castStripPlayPauseButton.setAlpha(1f);
+        castStripStopButton.setEnabled(true);
+        castStripStopButton.setAlpha(1f);
+        castStripSkipAdButton.setEnabled(true);
+        castStripSkipAdButton.setAlpha(1f);
+        // v48.11: no volume paint here — the receiver's
+        // volumeLevel is the cast session's own level (1.0),
+        // not the TV's SmartCast volume; the slider shows
+        // the TV's volume only. The dongle painter keeps
+        // painting from the receiver (there it IS the volume).
+        if (castStrip.getVisibility() != View.VISIBLE) {
+            castStrip.setVisibility(View.VISIBLE);
+            castStrip.post(new Runnable() {
+                @Override public void run() { resizeTouchpad(); }
+            });
+        }
+        // v48.15: auto-skip — the strip is showing now, so a skippable ad is skipped by itself.
+        maybeAutoSkipAd(st);
+        // v48.20: auto-skip on BUFFERING — same hook, same strip.
+        maybeBufferingSkipAd(st);
+    }
+
+    /** Hide a TV-cast strip — the session ended, another TV
+     *  was selected, or nothing is casting. No-op when the
+     *  strip is showing for a dongle (selectedCast set) or
+     *  already hidden. Pad back to full size. */
+    private void hideTvCastStrip() {
+        currentTvCastStatus = null;
+        if (selectedCast == null && castStrip != null
+                && castStrip.getVisibility() == View.VISIBLE) {
+            castStrip.setVisibility(View.GONE);
+            resizeTouchpad();
+        }
+        // v48.16: the strip hid (or the session ended) — the
+        // countdown stops; with a dongle selected this is a
+        // no-op, since the ticker follows the dongle status.
+        updateAdCountdownTicker();
+        // v48.20: the TV strip hid — the buffering episode ends with it.
+        bufferingSkipGuard.reset();
+        stopBufferingSkipSecondSend();
+    }
+
+    /** One media command on the selected TV's cast session,
+     *  then a fresh status read after a beat — the same
+     *  settle delay as the dongle, so the re-read does not
+     *  catch the receiver's transient BUFFERING state. A
+     *  command that did not take needs no error line: the
+     *  next status read hides the strip if the session is
+     *  gone. */
+    private void tvCastMediaCommand(final String type) {
+        if (type == null || currentTvCastStatus == null || castBusy) return;
+        final int index = selectedIndex;
+        final String ip = tvCastIp(index);
+        if (ip == null) return;
+        castBusy = true;
+        runBg(new Runnable() {
+            @Override public void run() {
+                try {
+                    CastVolume.Client client = castClientFor("tvcast:" + ip);
+                    client.mediaCommand(ip, type);
+                } catch (Exception e) {
+                    // No error line — the re-read below hides
+                    // the strip if the session is gone.
+                }
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        castBusy = false;
+                        if (selectedIndex != index) return;
+                        castStatusHandler.postDelayed(new Runnable() {
+                            @Override public void run() { refreshTvCastStatus(); }
+                        }, CastMedia.CAST_STATUS_SETTLE_MS);
+                    }
+                });
+            }
+        });
     }
 
     /** v28: the PAIR button, the status text and startPairing()
@@ -3183,6 +4649,41 @@ public class MainActivity extends Activity {
                         android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
         header.addView(tvScrollView);
         rebuildTvPills();
+        // v48.19: Goodnight — one tap turns off every TV that is
+        // on. A text pill at the top of the screen, left of the
+        // cog, so it reads as a screen-level action, not a control
+        // for the selected TV. It stays live in cast mode like the
+        // gear (the power button dims there, but Goodnight's whole
+        // point is turning everything off, even while casting).
+        // v48.22: the black pill was overwhelming next to the TV
+        // pills (the user), so Goodnight is now a quiet utility — same
+        // spot, same behavior, but small (11 sp) dimmed text on
+        // the header background, no heavy pill, minimal padding.
+        // Vertically centred in the 48 dp header by layout gravity.
+        Button goodnightButton = new Button(this);
+        goodnightButton.setText("Goodnight");
+        goodnightButton.setTextSize(11);
+        goodnightButton.setTextColor(COL_MUTED);
+        goodnightButton.setBackgroundColor(Color.TRANSPARENT);
+        goodnightButton.setAllCaps(false);
+        goodnightButton.setSingleLine(true);
+        goodnightButton.setMinWidth(0);
+        goodnightButton.setMinimumWidth(0);
+        goodnightButton.setMinimumHeight(0);
+        goodnightButton.setPadding(dp(4), 0, dp(4), 0);
+        goodnightButton.setContentDescription("Goodnight — turn off all TVs that are on");
+        applyPressAnimation(goodnightButton); // v23: every button visibly presses
+        LinearLayout.LayoutParams goodnightLp =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+        goodnightLp.gravity = Gravity.CENTER_VERTICAL;
+        goodnightLp.rightMargin = dp(8);
+        goodnightButton.setLayoutParams(goodnightLp);
+        goodnightButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { goodnight(); }
+        });
+        header.addView(goodnightButton);
         // v18: Settings is a proper detailed cog, drawn by hand
         // (CogIconView) — like the iPhone Settings icon. The
         // simple blue gear (U+2699) is gone: a font glyph is a
@@ -3218,6 +4719,82 @@ public class MainActivity extends Activity {
         });
         header.addView(powerToggleButton);
         root.addView(header);
+
+        // v48.2: the Chromecast row — a small labeled row under
+        // the TV pills, never mixed into them. Built once here;
+        // rebuildRemoteCastRow fills it whenever the list
+        // changes. GONE until a Chromecast is known, so the
+        // remote is unchanged for TV-only users.
+        // v48.8: the row sits close under the TV pills — only
+        // 2 dp of top padding, not the old 6 dp.
+        remoteCastRow = new LinearLayout(this);
+        remoteCastRow.setOrientation(LinearLayout.HORIZONTAL);
+        remoteCastRow.setGravity(Gravity.CENTER_VERTICAL);
+        remoteCastRow.setPadding(0, dp(2), 0, 0);
+        remoteCastRow.setVisibility(View.GONE);
+        root.addView(remoteCastRow);
+        rebuildRemoteCastRow();
+
+        // v48.6: the inline mini-player strip — directly under
+        // the Chromecast row, GONE until a Chromecast is
+        // selected, so the remote is unchanged for TV-only
+        // users and for unselected Chromecasts. Just the
+        // what's-playing line plus Pause, Stop and Skip Ad
+        // (v48.14; v48.7: no volume here — the TV's volume
+        // slider at the bottom handles volume at the TV level).
+        castStrip = new LinearLayout(this);
+        castStrip.setOrientation(LinearLayout.VERTICAL);
+        castStrip.setPadding(0, dp(4), 0, 0);
+        castStrip.setVisibility(View.GONE);
+        castStripNowView = new TextView(this);
+        castStripNowView.setTextSize(14);
+        castStripNowView.setTextColor(COL_TEXT);
+        // v48.9: one line, ellipsized — a long title must never
+        // wrap and grow the strip (resizeTouchpad sizes the pad
+        // from the strip's measured height, so it has to stay
+        // fixed once laid out).
+        castStripNowView.setSingleLine(true);
+        castStripNowView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        castStripNowView.setPadding(0, 0, 0, dp(4));
+        castStrip.addView(castStripNowView);
+        LinearLayout stripRow = new LinearLayout(this);
+        stripRow.setOrientation(LinearLayout.HORIZONTAL);
+        stripRow.setGravity(Gravity.CENTER_VERTICAL);
+        castStripPlayPauseButton = settingsButton("Play", 14);
+        LinearLayout.LayoutParams stripPlayLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        stripPlayLp.rightMargin = dp(8);
+        castStripPlayPauseButton.setLayoutParams(stripPlayLp);
+        castStripPlayPauseButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { castPlayPause(); }
+        });
+        stripRow.addView(castStripPlayPauseButton);
+        castStripStopButton = settingsButton("Stop", 14);
+        LinearLayout.LayoutParams stripStopLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        stripStopLp.rightMargin = dp(8);
+        castStripStopButton.setLayoutParams(stripStopLp);
+        castStripStopButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { castStripCommand("STOP"); }
+        });
+        stripRow.addView(castStripStopButton);
+        // v48.14: and Skip Ad after Stop — a visible button
+        // is easier than remembering the double-tap. Same
+        // SKIP_AD media message as the pad double-tap
+        // (v48.12), via castStripCommand, so it targets
+        // whatever the strip is showing: the dongle or a
+        // TV cast. Outside a skippable ad the receiver
+        // ignores it, so there is no ad detection here.
+        castStripSkipAdButton = settingsButton("Skip Ad", 14);
+        LinearLayout.LayoutParams stripSkipLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        castStripSkipAdButton.setLayoutParams(stripSkipLp);
+        castStripSkipAdButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { castStripCommand("SKIP_AD"); }
+        });
+        stripRow.addView(castStripSkipAdButton);
+        castStrip.addView(stripRow);
+        root.addView(castStrip);
 
         // v11: the TV info line is gone from the screen — the
         // selected room pill already says which TV this is, and
@@ -3307,7 +4884,10 @@ public class MainActivity extends Activity {
         // nav row is Menu / Home / Back / KB only now.
         LinearLayout navRow = new LinearLayout(this);
         navRow.setOrientation(LinearLayout.HORIZONTAL);
-        navRow.setPadding(0, dp(8), 0, 0);
+        // v48.24: 6 dp gaps, not 8 — with the CC/Sleep row the
+        // screen needs the room; the nav / playback / app /
+        // volume rows below all use the same 6 dp.
+        navRow.setPadding(0, dp(6), 0, 0);
         navRowView = navRow;
         LinearLayout.LayoutParams navCell =
                 new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
@@ -3359,7 +4939,7 @@ public class MainActivity extends Activity {
         // The YouTube button is the drawn red icon (v16).
         LinearLayout playbackRow = new LinearLayout(this);
         playbackRow.setOrientation(LinearLayout.HORIZONTAL);
-        playbackRow.setPadding(0, dp(8), 0, 0);
+        playbackRow.setPadding(0, dp(6), 0, 0);
         LinearLayout.LayoutParams playCell =
                 new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         playCell.rightMargin = dp(6);
@@ -3403,6 +4983,7 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { sendKey(VizioApi.KEY_SEEK_FWD, "Fast-forward"); }
         });
         playbackRow.addView(ffBtn);
+        playbackRowView = playbackRow;
         controlsLayout.addView(playbackRow);
 
         // v25: app buttons row — YouTube + Netflix side by side,
@@ -3415,7 +4996,7 @@ public class MainActivity extends Activity {
         // and the remote still fits on one screen.
         LinearLayout appRow = new LinearLayout(this);
         appRow.setOrientation(LinearLayout.HORIZONTAL);
-        appRow.setPadding(0, dp(8), 0, 0);
+        appRow.setPadding(0, dp(6), 0, 0);
         LinearLayout.LayoutParams appCell =
                 new LinearLayout.LayoutParams(0, dp(44), 1f);
         appCell.rightMargin = dp(6);
@@ -3448,6 +5029,7 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { launchNetflix(); }
         });
         appRow.addView(netflixBtn);
+        appRowView = appRow;
         controlsLayout.addView(appRow);
 
         // v18: volume is ONE row — speaker icon on the left,
@@ -3460,7 +5042,7 @@ public class MainActivity extends Activity {
         // lives in the slider thumb, not on its own line (v11).
         LinearLayout volumeRow = new LinearLayout(this);
         volumeRow.setOrientation(LinearLayout.HORIZONTAL);
-        volumeRow.setPadding(0, dp(8), 0, 0);
+        volumeRow.setPadding(0, dp(6), 0, 0);
         // v11: speaker icon, like the reference picture. v12:
         // tap it to mute/unmute — it is the mute toggle now.
         // The icon flips to its muted look at once (optimistic),
@@ -3494,6 +5076,10 @@ public class MainActivity extends Activity {
         volumeThumb = new VolumeThumbDrawable(this, 48);
         volumeBar.setThumb(volumeThumb);
         volumeBar.setThumbOffset(dp(24));
+        // v48.11: room for the 48 dp thumb at both ends — at
+        // 100% it was half cut off by the screen edge, and at
+        // 0% it overlapped the speaker icon.
+        volumeBar.setPadding(dp(24), 0, dp(24), 0);
         volumeBar.setProgressTintList(
                 android.content.res.ColorStateList.valueOf(0xFF1C1C1E));
         volumeBar.setProgressBackgroundTintList(
@@ -3506,8 +5092,8 @@ public class MainActivity extends Activity {
                 updateVolumeThumb(p);
                 if (fromUser) volumeView.setText("Volume: " + p);
             }
-            @Override public void onStartTrackingTouch(SeekBar s) {}
-            @Override public void onStopTrackingTouch(SeekBar s) { setVolumeTo(s.getProgress()); }
+            @Override public void onStartTrackingTouch(SeekBar s) { volumeDragging = true; }
+            @Override public void onStopTrackingTouch(SeekBar s) { volumeDragging = false; setVolumeTo(s.getProgress()); }
         });
         // v18: weight 1 — the slider takes the rest of the
         // row beside the speaker icon (the whole width minus
@@ -3516,6 +5102,48 @@ public class MainActivity extends Activity {
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         volumeRow.addView(volumeBar);
         controlsLayout.addView(volumeRow);
+        // v48.23: CC + sleep timer on the main screen (the user) — they
+        // lived only in Settings. Two quiet text controls under
+        // the volume row, same 11 sp dimmed text as Goodnight
+        // (v48.22), not big pills: they must not compete with
+        // the TV pills or the pad. The spacer above the touchpad
+        // absorbs the extra row and the remote still fits on one
+        // screen. Both follow the selected TV (updateMainCcSleepUi,
+        // called from updateCcUi/updateSleepUi/selectTv) and both
+        // drive the same Settings code — setCcTo / setSleepTimerTo
+        // — so the two places can never disagree. They stay live
+        // in cast mode like Goodnight: they talk to the selected
+        // TV, not the pad, so setCastMode does not dim them.
+        LinearLayout ccSleepRow = new LinearLayout(this);
+        ccSleepRow.setOrientation(LinearLayout.HORIZONTAL);
+        ccSleepRow.setPadding(0, dp(8), 0, 0);
+        mainCcButton = quietTextButton("CC: —");
+        mainCcButton.setContentDescription("Closed captions — tap to toggle");
+        mainCcButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (!hasTv()) return;
+                Boolean target = VizioApi.ccToggleTarget(cachedCc[selectedIndex]);
+                if (target == null) { refreshCcState(); return; }
+                setCcTo(target.booleanValue());
+            }
+        });
+        LinearLayout.LayoutParams ccLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        ccLp.rightMargin = dp(16);
+        mainCcButton.setLayoutParams(ccLp);
+        ccSleepRow.addView(mainCcButton);
+        mainSleepButton = quietTextButton("Sleep: —");
+        mainSleepButton.setContentDescription("Sleep timer — tap to cycle Off, 30, 60, 90, 120 minutes");
+        mainSleepButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (!hasTv()) return;
+                if (cachedSleep[selectedIndex] < 0) { refreshSleepState(); return; }
+                setSleepTimerTo(VizioApi.nextSleepTimerMinutes(cachedSleep[selectedIndex]));
+            }
+        });
+        ccSleepRow.addView(mainSleepButton);
+        controlsLayout.addView(ccSleepRow);
         // v18: no VOL − / VOL + buttons and no separate Mute
         // button — the speaker icon in the same row is the mute
         // toggle. No Inputs row either: inputs live in Settings,
@@ -3640,6 +5268,36 @@ public class MainActivity extends Activity {
         settingsFoundLayout = new LinearLayout(this);
         settingsFoundLayout.setOrientation(LinearLayout.VERTICAL);
         root.addView(settingsFoundLayout);
+
+        // v48.15: auto-skip ads — while the cast strip is open,
+        // a skippable ad is skipped by itself. On by default, same
+        // On / Off option-button pattern as CC; the Skip Ad button
+        // and double-tap still work by hand when it is off.
+        autoSkipTitleView = settingsSectionTitle("Auto-skip ads");
+        root.addView(autoSkipTitleView);
+        TextView autoSkipHelp = mutedText("While the cast strip is open, skip a skippable ad by itself — no tap needed. Turn it off and the Skip Ad button and double-tap still work by hand.", 14);
+        root.addView(autoSkipHelp);
+        LinearLayout autoSkipRow = new LinearLayout(this);
+        autoSkipRow.setOrientation(LinearLayout.HORIZONTAL);
+        autoSkipRow.setPadding(0, dp(8), 0, 0);
+        LinearLayout.LayoutParams autoSkipCell =
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        autoSkipOnButton = optionButton("On", false);
+        autoSkipOnButton.setLayoutParams(autoSkipCell);
+        autoSkipOnButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { setAutoSkipAds(true); }
+        });
+        autoSkipRow.addView(autoSkipOnButton);
+        LinearLayout.LayoutParams autoSkipCell2 =
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        autoSkipCell2.leftMargin = dp(8);
+        autoSkipOffButton = optionButton("Off", false);
+        autoSkipOffButton.setLayoutParams(autoSkipCell2);
+        autoSkipOffButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { setAutoSkipAds(false); }
+        });
+        autoSkipRow.addView(autoSkipOffButton);
+        root.addView(autoSkipRow);
 
         // --- Pairing ---
         root.addView(settingsSectionTitle("Pair with the TV"));
@@ -3952,7 +5610,12 @@ public class MainActivity extends Activity {
         runOnUiThread(new Runnable() {
             @Override public void run() {
                 for (int i = 0; i < controlsLayout.getChildCount(); i++) {
-                    setEnabledDeep(controlsLayout.getChildAt(i), on);
+                    View child = controlsLayout.getChildAt(i);
+                    // v48.12: in cast mode the pad stays live for
+                    // double-tap skip-ad — a pairing refresh must
+                    // not kill it while a dongle is selected.
+                    if (selectedCast != null && child == touchpadView) continue;
+                    setEnabledDeep(child, on);
                 }
                 // v18: Power lives in the header now, not in
                 // controlsLayout — enable/disable it explicitly.
@@ -4211,7 +5874,24 @@ public class MainActivity extends Activity {
      *  is black with a checkmark. No network — the state is read
      *  only when Settings is opened (refreshCcState) or after a
      *  change. */
+    /** v48.15: write the auto-skip switch, then repaint it. */
+    private void setAutoSkipAds(boolean on) {
+        if (prefs != null) prefs.edit().putBoolean(PREF_AUTO_SKIP_ADS, on).apply();
+        updateAutoSkipUi();
+    }
+
+    /** v48.15: repaint the auto-skip section from prefs — the title carries the current value, like CC. */
+    private void updateAutoSkipUi() {
+        if (autoSkipTitleView == null || autoSkipOnButton == null || autoSkipOffButton == null) return;
+        boolean on = autoSkipAdsOn();
+        autoSkipTitleView.setText("Auto-skip ads: " + (on ? "On" : "Off"));
+        paintOption(autoSkipOnButton, "On", on);
+        paintOption(autoSkipOffButton, "Off", !on);
+    }
+
     private void updateCcUi() {
+        // v48.23: the main-screen controls show the same state.
+        updateMainCcSleepUi();
         if (ccStateView == null || ccOnButton == null || ccOffButton == null) return;
         if (!hasTv()) {
             ccStateView.setText("Closed Captions: find a TV in setup first");
@@ -4290,6 +5970,8 @@ public class MainActivity extends Activity {
         updateCcUi();
         ccOnButton.setEnabled(false);
         ccOffButton.setEnabled(false);
+        // v48.23: the main-screen CC control waits too.
+        if (mainCcButton != null) mainCcButton.setEnabled(false);
         runBg(new Runnable() {
             @Override public void run() {
                 boolean ok = VizioApi.setClosedCaptionsEnabled(ip, auth, wantOn);
@@ -4318,6 +6000,8 @@ public class MainActivity extends Activity {
      *  and the five option buttons are painted from the per-TV
      *  cache, so the current choice is black with a checkmark. */
     private void updateSleepUi() {
+        // v48.23: the main-screen controls show the same state.
+        updateMainCcSleepUi();
         if (sleepStateView == null) return;
         if (!hasTv()) {
             sleepStateView.setText("Sleep Timer: find a TV in setup first");
@@ -4344,6 +6028,29 @@ public class MainActivity extends Activity {
                 b.setEnabled(paired);
             }
         }
+    }
+
+    /** v48.23: repaint the main-screen CC + sleep controls from
+     *  the same per-TV caches Settings uses — same text, same
+     *  state, no network. Called from updateCcUi/updateSleepUi
+     *  (every set and read-back) and from selectTv (TV switch),
+     *  so the two places always agree. */
+    private void updateMainCcSleepUi() {
+        if (mainCcButton == null || mainSleepButton == null) return;
+        if (!hasTv()) {
+            mainCcButton.setText("CC: —");
+            mainCcButton.setEnabled(false);
+            mainSleepButton.setText("Sleep: —");
+            mainSleepButton.setEnabled(false);
+            return;
+        }
+        boolean paired = authToken != null && !authToken.isEmpty();
+        int cc = cachedCc[selectedIndex];
+        mainCcButton.setText(cc < 0 ? "CC: —" : (cc == 1 ? "CC: On" : "CC: Off"));
+        mainCcButton.setEnabled(paired);
+        int s = cachedSleep[selectedIndex];
+        mainSleepButton.setText(s < 0 ? "Sleep: —" : "Sleep: " + sleepLabel(s));
+        mainSleepButton.setEnabled(paired);
     }
 
     /** v20: short label for a sleep-timer option button. */
@@ -4847,6 +6554,108 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** v48.19: Goodnight — turn off every TV that is on, one tap.
+     *  Only TVs with known power 1 get a toggle (see
+     *  TvRegistry.goodnightTargets): off or unknown are never
+     *  toggled, or Goodnight would switch a TV ON. The status
+     *  line says what happened per TV ("turning off X. Y already
+     *  off. Z power unknown — left alone"); the normal 1.5 s /
+     *  5 s re-reads correct the power colours afterwards. The
+     *  cast strip is left alone — if a TV was casting, the TV
+     *  watch clears its strip when the session ends. */
+    private void goodnight() {
+        if (tvs.isEmpty()) {
+            stateView.setText("Goodnight: no TVs paired yet.");
+            return;
+        }
+        List<Integer> targets = TvRegistry.goodnightTargets(cachedPower);
+        List<String> turningOff = new ArrayList<>();
+        List<String> alreadyOff = new ArrayList<>();
+        List<String> unknown = new ArrayList<>();
+        for (int i = 0; i < tvs.size(); i++) {
+            String room = tvs.get(i).room;
+            if (cachedPower[i] == 1) turningOff.add(room);
+            else if (cachedPower[i] == 0) alreadyOff.add(room);
+            else unknown.add(room);
+        }
+        StringBuilder sb = new StringBuilder("Goodnight: ");
+        boolean first = true;
+        if (!turningOff.isEmpty()) {
+            sb.append("turning off ").append(android.text.TextUtils.join(" and ", turningOff));
+            first = false;
+        }
+        if (!alreadyOff.isEmpty()) {
+            if (!first) sb.append(". ");
+            first = false;
+            sb.append(android.text.TextUtils.join(" and ", alreadyOff)).append(" already off");
+        }
+        if (!unknown.isEmpty()) {
+            if (!first) sb.append(". ");
+            sb.append(android.text.TextUtils.join(" and ", unknown)).append(" power unknown — left alone");
+        }
+        sb.append(".");
+        stateView.setText(sb.toString());
+        for (int i : targets) sendPowerToggleTo(i);
+    }
+
+    /** v48.19: power toggle for one TV by index (Goodnight) — the
+     *  same send + optimistic flip + 1.5 s / 5 s re-reads as
+     *  sendKey's KEY_POWER_TOGGLE branch, but addressed to the
+     *  TV at tvIndex instead of the selected one, so Goodnight
+     *  can turn off a TV the user is not currently looking at. */
+    private void sendPowerToggleTo(final int tvIndex) {
+        if (tvIndex < 0 || tvIndex >= tvs.size()) return;
+        final String ip = tvIps[tvIndex];
+        final String auth = tvAuths[tvIndex];
+        final String room = tvs.get(tvIndex).room;
+        if (ip == null || auth == null || auth.isEmpty()) {
+            stateView.setText("Goodnight: " + room + " isn't paired — left alone.");
+            return;
+        }
+        runBg(new Runnable() {
+            @Override public void run() {
+                VizioApi.Resp r = VizioApi.sendKey(ip, auth,
+                        VizioApi.KEY_POWER_TOGGLE[0], VizioApi.KEY_POWER_TOGGLE[1]);
+                if (VizioApi.isSuccess(r)) {
+                    // v47.2 pattern: flip the cached power at once
+                    // (known state only — never guess from unknown),
+                    // repaint both power buttons if this is the
+                    // selected TV, and re-read at 1.5 s and 5 s to
+                    // settle on the truth.
+                    if (cachedPower[tvIndex] == 0 || cachedPower[tvIndex] == 1) {
+                        cachedPower[tvIndex] = 1 - cachedPower[tvIndex];
+                        saveCachedState(tvIndex);
+                        final int flipped = cachedPower[tvIndex];
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                if (tvIndex != selectedIndex) return;
+                                if (powerToggleButton != null) powerToggleButton.setPowerState(flipped);
+                                if (touchpadRingView != null) touchpadRingView.setPowerState(flipped);
+                            }
+                        });
+                    }
+                    scanRetryHandler.postDelayed(new Runnable() {
+                        @Override public void run() {
+                            refreshFastStateFor(tvIndex, ip, auth);
+                        }
+                    }, 1500);
+                    scanRetryHandler.postDelayed(new Runnable() {
+                        @Override public void run() {
+                            refreshFastStateFor(tvIndex, ip, auth);
+                        }
+                    }, POWER_SETTLE_REREAD_MS);
+                } else {
+                    final String m = "Goodnight: " + room
+                            + " didn't turn off — check it's on and on home WiFi.";
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() { stateView.setText(m); }
+                    });
+                    toast(m);
+                }
+            }
+        });
+    }
+
     /** v9: one cached Cast client per TV id — reused while the
      *  app is open; CastVolume.Client reconnects itself when the
      *  socket goes stale or the TV's IP changes. */
@@ -4865,10 +6674,51 @@ public class MainActivity extends Activity {
         // v27: a pending auto retry must not fire after the
         // activity is gone.
         cancelPendingScanRetry();
+        // v48: a discovery round must not outlive the activity.
+        stopCastDiscovery();
+        // v48.5: the status poll must not outlive it either.
+        stopCastStatusPoll();
+        // v48.16: the countdown ticker must not either.
+        stopAdCountdownTicker();
+        // v48.20: the delayed buffering second send must not either.
+        stopBufferingSkipSecondSend();
         for (CastVolume.Client c : castClients.values()) {
             if (c != null) c.close();
         }
         castClients.clear();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // v48.2: no mDNS listening while the app is in the
+        // background — discovery restarts on resume below.
+        stopCastDiscovery();
+        // v48.5: no status polling in the background either.
+        stopCastStatusPoll();
+        // v48.16: no countdown ticking in the background either.
+        stopAdCountdownTicker();
+        // v48.20: no delayed buffering second send in the background either.
+        stopBufferingSkipSecondSend();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // v48.2: discovery runs while the app is visible, on
+        // any screen that lists Chromecasts (remote, setup,
+        // Settings). v48.3: this is also the retry after a
+        // discovery failure — a failed start leaves
+        // castDiscovering false, so resume starts it again.
+        startCastDiscovery();
+        // v48.6: the strip may be selected on the remote
+        // screen — resume its poll too (castStripVisible
+        // is false on the other screens, so this only
+        // fires where the strip can actually be seen).
+        // v48.10: with no dongle selected the poll is the
+        // TV watch — start it whenever the remote is the
+        // screen showing, not only when a strip is open.
+        if (remoteScroll != null && remoteScroll.getVisibility() == View.VISIBLE) startCastStatusPoll();
     }
 
     /**
@@ -4892,6 +6742,10 @@ public class MainActivity extends Activity {
      *  back — never a popup.
      */
     private void setVolumeTo(final int target) {
+        // v48.9: with a Chromecast selected the bottom slider
+        // drives the Chromecast, not the TV — same one-shot
+        // send on release, never a stream while dragging.
+        if (selectedCast != null) { setCastVolumeTo(target); return; }
         if (authToken == null || currentIp == null) return;
         if (volumeBusy) return; // a set is already in flight — ignore
         volumeBusy = true;
@@ -4972,6 +6826,52 @@ public class MainActivity extends Activity {
                                     + " — Cast volume unavailable, using step volume");
                         } else {
                             stateView.setText("Volume: " + (actual != null ? actual : level));
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /** v48.9: the bottom slider's target while a Chromecast
+     *  is selected — one absolute SET_VOLUME to the receiver,
+     *  confirmed by the RECEIVER_STATUS back, on the same
+     *  CastVolume.Client the TV path uses. The mute button
+     *  stays TV-only. A set that does not take puts the slider
+     *  back on the last known cast level. */
+    private void setCastVolumeTo(final int target) {
+        if (currentCast == null || volumeBusy) return;
+        volumeBusy = true;
+        final String ip = currentCast.ip;
+        final int level = VizioApi.clampVolume(target);
+        stateView.setText("Setting volume…");
+        runBg(new Runnable() {
+            @Override public void run() {
+                Integer confirmed = null;
+                try {
+                    CastVolume.Client cast = castClientFor("cast:" + ip);
+                    confirmed = cast.setVolume(ip, level);
+                } catch (Exception e) {
+                    confirmed = null; // Cast never throws to the UI
+                }
+                final Integer actual = confirmed;
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        volumeBusy = false;
+                        if (currentCast == null || !currentCast.ip.equals(ip)) return;
+                        if (actual != null) {
+                            volumeBar.setProgress(actual);
+                            updateVolumeThumb(actual);
+                            volumeView.setText("Volume: " + actual);
+                            stateView.setText("Volume: " + actual + " (Chromecast)");
+                        } else {
+                            stateView.setText("Volume didn't take — check the Chromecast is on and on WiFi.");
+                            if (currentCastStatus != null && currentCastStatus.volumeLevel != null) {
+                                int last = (int) Math.round(currentCastStatus.volumeLevel * 100);
+                                volumeBar.setProgress(last);
+                                updateVolumeThumb(last);
+                                volumeView.setText("Volume: " + last);
+                            }
                         }
                     }
                 });
@@ -5170,6 +7070,12 @@ public class MainActivity extends Activity {
             e.putString(TvRegistry.prefKeyCachedInput(tv), cachedInput[tvIndex]);
         }
         e.apply();
+        // v48.26: the home-screen widget reads the same cached
+        // power/volume — repaint it whenever the app writes state,
+        // so the widget follows the app with no poller. Cheap when
+        // no widget is placed (no instances → returns at once) and
+        // safe from any thread (AppWidgetManager is a binder call).
+        TvWidgetProvider.updateAllWidgets(this);
     }
 
     /** Input list, on demand only (v6). The list takes ~1,178 ms on
@@ -5305,6 +7211,11 @@ public class MainActivity extends Activity {
                 setStatus(firstLaunch ? "Looking for your TVs…" : "Looking for your TVs again…");
             }
         });
+        // v48.2: Refresh restarts Chromecast discovery cleanly
+        // too — live entries drop to last-seen first, then a
+        // fresh continuous round re-finds them. A single missed
+        // round never empties the list any more.
+        restartCastDiscovery();
         refreshWifiStatus();
         runBg(new Runnable() {
             @Override public void run() {

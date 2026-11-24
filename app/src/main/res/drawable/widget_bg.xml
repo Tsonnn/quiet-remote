@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v48.28: widget background — the app's light silver (same
+     top/bottom gradient as the remote screen: COL_BG_TOP to
+     COL_BG_BOTTOM), rounded corners. Replaces the v48.26 dark
+     surface (the user: make it nicer looking, like the app). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:startColor="#E7E7EA"
+        android:endColor="#CFCFD3"
+        android:angle="270" />
+    <corners android:radius="16dp" />
+</shape>

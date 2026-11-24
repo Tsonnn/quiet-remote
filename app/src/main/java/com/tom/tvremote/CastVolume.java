@@ -8,6 +8,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 import javax.net.ssl.SSLContext;
@@ -441,6 +443,12 @@ public final class CastVolume {
         private int nextRequestId = 1;
         private long lastUsedMs = 0;
         private boolean connected = false;
+        // v48: the running app's ids, learned from the last
+        // RECEIVER_STATUS / MEDIA_STATUS read — media commands
+        // go to the transportId with this media session id.
+        private String castSessionId;
+        private String castTransportId;
+        private Integer castMediaSessionId;
 
         public Client() {}
 
@@ -457,6 +465,9 @@ public final class CastVolume {
 
         public synchronized void close() {
             connected = false;
+            castSessionId = null;
+            castTransportId = null;
+            castMediaSessionId = null;
             try { if (socket != null) socket.close(); } catch (Exception ignored) {}
             socket = null;
             in = null;
@@ -488,10 +499,7 @@ public final class CastVolume {
                 out = s.getOutputStream();
                 send(NS_CONNECTION, connectJson());
                 // Prove the handshake: GET_STATUS must answer.
-                int id = nextId();
-                send(NS_RECEIVER, getStatusJson(id));
-                Message reply = readReceiverStatus(id, READ_TIMEOUT_MS);
-                if (reply == null) {
+                if (requestReceiverStatus() == null) {
                     close();
                     return false;
                 }
@@ -562,8 +570,166 @@ public final class CastVolume {
             }
         }
 
+        // ---------- v48: media status + commands (Chromecast) ----------
+
+        /** One GET_STATUS on the receiver namespace, answered
+         *  by a RECEIVER_STATUS payload — null on any failure.
+         *  The socket must already be open (connect() proves
+         *  the handshake with this same call). */
+        private String requestReceiverStatus() {
+            try {
+                int id = nextId();
+                send(NS_RECEIVER, getStatusJson(id));
+                Message reply = readReceiverStatus(id, READ_TIMEOUT_MS);
+                return reply == null ? null : reply.payloadUtf8;
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        /** Current RECEIVER_STATUS payload for this host, or
+         *  null when the device does not answer. Connects first
+         *  when the cached socket is stale. */
+        public synchronized String getReceiverStatusJson(String ip) {
+            if (ip == null) return null;
+            if (this.ip != null && !this.ip.equals(ip)) close();
+            try {
+                if (!isUsable() && !connect(ip)) return null;
+                String payload = requestReceiverStatus();
+                if (payload != null) {
+                    lastUsedMs = System.currentTimeMillis();
+                    return payload;
+                }
+                // v48.11: no answer on a socket that looked
+                // usable is a dead socket after sleep, not a
+                // dead device — drop it and try once on a
+                // fresh connection, the way setVolume already
+                // does. Without this the poll retries the same
+                // dead socket until the 60 s idle gate expires
+                // (~30 s after unlock in practice).
+                close();
+                if (!connect(ip)) return null;
+                payload = requestReceiverStatus();
+                if (payload != null) lastUsedMs = System.currentTimeMillis();
+                return payload;
+            } catch (Exception e) {
+                close();
+                return null;
+            }
+        }
+
+        /** Connect the media namespace to one running app: the
+         *  app's transportId becomes the destination of the
+         *  CONNECT, so later media messages go to the app. */
+        private boolean connectToApp(String transportId) {
+            try {
+                sendTo(NS_CONNECTION, transportId, connectJson());
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        /** One GET_STATUS on the media namespace to the app's
+         *  transportId — answers with a MEDIA_STATUS payload,
+         *  or null on any failure. */
+        private String requestMediaStatus(String transportId) {
+            try {
+                int id = nextId();
+                sendTo(CastMedia.NS_MEDIA, transportId, getStatusJson(id));
+                Message reply = readStatusMessage(CastMedia.NS_MEDIA, "MEDIA_STATUS", id, READ_TIMEOUT_MS);
+                return reply == null ? null : reply.payloadUtf8;
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        /** What this Chromecast is doing: the running app (if
+         *  any), its title and play state, and the device
+         *  volume. Returns null when the device does not
+         *  answer at all — the caller shows "couldn't reach
+         *  it". A device with no app running returns a status
+         *  with no app (idle), which is a real answer, not a
+         *  failure. The app's ids are remembered on this
+         *  client so mediaCommand can use them. */
+        public synchronized CastMedia.MediaStatus getCastStatus(String ip) {
+            if (ip == null) return null;
+            if (this.ip != null && !this.ip.equals(ip)) close();
+            try {
+                String recv = getReceiverStatusJson(ip);
+                if (recv == null) return null;
+                CastMedia.MediaStatus st = new CastMedia.MediaStatus();
+                VolumeStatus v = parseReceiverVolume(recv);
+                st.volumeLevel = v.level;
+                st.muted = v.muted;
+                List<CastMedia.App> apps = CastMedia.parseApplications(recv);
+                if (apps.isEmpty()) return st;
+                CastMedia.App app = apps.get(0);
+                st.appName = app.displayName;
+                st.sessionId = app.sessionId;
+                st.transportId = app.transportId;
+                castSessionId = app.sessionId;
+                castTransportId = app.transportId;
+                connectToApp(app.transportId);
+                String media = requestMediaStatus(app.transportId);
+                if (media != null) {
+                    CastMedia.MediaStatus ms = CastMedia.parseMediaStatus(media);
+                    st.playerState = ms.playerState;
+                    st.title = ms.title;
+                    st.mediaSessionId = ms.mediaSessionId;
+                    castMediaSessionId = ms.mediaSessionId;
+                }
+                lastUsedMs = System.currentTimeMillis();
+                return st;
+            } catch (Exception e) {
+                close();
+                return null;
+            }
+        }
+
+        /** PLAY, PAUSE, STOP or SKIP_AD on the running app's
+         *  media session. Returns true when the device answered
+         *  with a MEDIA_STATUS. False when nothing is playing
+         *  (no media session) or the device does not answer.
+         *  Only STOP ends the session, so only STOP clears the
+         *  remembered ids — SKIP_AD leaves them alone. The
+         *  caller refreshes the status afterwards — the reply
+         *  itself is not parsed here. */
+        public synchronized boolean mediaCommand(String ip, String type) {
+            if (ip == null || type == null) return false;
+            if (this.ip != null && !this.ip.equals(ip)) close();
+            try {
+                if (castTransportId == null || castMediaSessionId == null) {
+                    CastMedia.MediaStatus st = getCastStatus(ip);
+                    if (st == null || st.transportId == null || st.mediaSessionId == null) return false;
+                }
+                int id = nextId();
+                String json = CastMedia.commandJson(type, id, castMediaSessionId);
+                if (json == null) return false;
+                sendTo(CastMedia.NS_MEDIA, castTransportId, json);
+                Message reply = readStatusMessage(CastMedia.NS_MEDIA, "MEDIA_STATUS", id, READ_TIMEOUT_MS);
+                lastUsedMs = System.currentTimeMillis();
+                if ("STOP".equals(type)) {
+                    castSessionId = null;
+                    castTransportId = null;
+                    castMediaSessionId = null;
+                }
+                return reply != null;
+            } catch (Exception e) {
+                close();
+                return false;
+            }
+        }
+
         private void send(String namespace, String payloadJson) throws IOException {
-            byte[] frame = encodeMessage(SENDER_ID, RECEIVER_ID, namespace, payloadJson);
+            sendTo(namespace, RECEIVER_ID, payloadJson);
+        }
+
+        /** Same frame, addressed to another destination — the
+         *  media namespace talks to the app's transportId, not
+         *  to receiver-0 (v48). */
+        private void sendTo(String namespace, String destinationId, String payloadJson) throws IOException {
+            byte[] frame = encodeMessage(SENDER_ID, destinationId, namespace, payloadJson);
             out.write(frame);
             out.flush();
         }
@@ -596,6 +762,18 @@ public final class CastVolume {
          *  different requestId arrives, it is kept as a fallback
          *  and returned if nothing better shows up in time. */
         private Message readReceiverStatus(int expectedRequestId, long timeoutMs) {
+            return readStatusMessage(NS_RECEIVER, "RECEIVER_STATUS", expectedRequestId, timeoutMs);
+        }
+
+        /** Read messages until one in the given namespace whose
+         *  payload carries the type marker and answers this
+         *  requestId arrives, or the deadline passes. Other
+         *  namespaces and other message types are skipped. A
+         *  status with a different requestId is kept as a
+         *  fallback and returned if nothing better shows up in
+         *  time (v48: the media namespace uses this too). */
+        private Message readStatusMessage(String namespace, String typeMarker,
+                                          int expectedRequestId, long timeoutMs) {
             long deadline = System.currentTimeMillis() + timeoutMs;
             Message fallback = null;
             try {
@@ -611,8 +789,8 @@ public final class CastVolume {
                         return fallback;
                     }
                     if (m == null || m.payloadUtf8 == null) continue;
-                    if (!NS_RECEIVER.equals(m.namespace)) continue;
-                    if (!isReceiverStatus(m.payloadUtf8)) continue;
+                    if (!namespace.equals(m.namespace)) continue;
+                    if (!m.payloadUtf8.contains(typeMarker)) continue;
                     Integer rid = parseRequestId(m.payloadUtf8);
                     if (rid != null && rid == expectedRequestId) return m;
                     if (fallback == null) fallback = m;

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v48.34: the widget's open-app button is a magnifying glass
+     (the user, 2026-11-24: "Make q look as magnifying glass", approved
+     from the mockup). The v48.33 button used the whole app icon
+     (@mipmap/ic_launcher — the Q on its silver rounded square)
+     pasted on the white pill, which looked stuck on. This is a
+     hand-drawn vector instead: an open ring (outline circle,
+     dark #1C1C1E, NOT a solid disc) with a handle at the bottom
+     right — the same mark as the approved mockup (64 viewBox,
+     ring centred (26,26) radius 17 with a 6 stroke, handle from
+     (39,39) to (55,55) with a 6 stroke and round cap). Hand-drawn
+     path, never a font glyph — same rule as every icon in the app. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M 26 9 A 17 17 0 1 0 26 43 A 17 17 0 1 0 26 9 Z"
+        android:strokeColor="#1C1C1E"
+        android:strokeWidth="6"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M 39 39 L 55 55"
+        android:strokeColor="#1C1C1E"
+        android:strokeWidth="6"
+        android:strokeLineCap="round" />
+</vector>

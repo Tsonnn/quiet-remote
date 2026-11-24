@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v48.32: widget Power button, TV on — pill shape in the same
+     soft green as TvRegistry.widgetPowerColor (0xFF81C784).
+     A flat setBackgroundColor painted a rectangle, which is why
+     the Power button looked different from the pill-shaped
+     Vol/Skip buttons; a drawable keeps the pill. The 48 dp
+     radius is a full pill at any button height. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#81C784" />
+    <corners android:radius="48dp" />
+</shape>

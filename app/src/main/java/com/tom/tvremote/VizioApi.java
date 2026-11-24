@@ -290,6 +290,34 @@ public final class VizioApi {
         return minutes <= 0 ? "Off" : minutes + " minutes";
     }
 
+    /** Next sleep-timer value in the cycle Off -> 30 -> 60 -> 90 ->
+     *  120 -> Off. Pure, unit-tested. An unknown state (-1) starts
+     *  at 30. A value the TV reports that is not one of the options
+     *  (a timer counting down, e.g. 25 minutes left of 30) steps to
+     *  the smallest option above it, or Off when there is none. */
+    public static int nextSleepTimerMinutes(int current) {
+        if (current < 0) return 30;
+        for (int i = 0; i < SLEEP_TIMER_OPTIONS_MIN.length; i++) {
+            if (SLEEP_TIMER_OPTIONS_MIN[i] == current) {
+                return SLEEP_TIMER_OPTIONS_MIN[(i + 1) % SLEEP_TIMER_OPTIONS_MIN.length];
+            }
+        }
+        for (int i = 0; i < SLEEP_TIMER_OPTIONS_MIN.length; i++) {
+            if (SLEEP_TIMER_OPTIONS_MIN[i] > current) return SLEEP_TIMER_OPTIONS_MIN[i];
+        }
+        return 0;
+    }
+
+    /** What a tap on a closed-captions toggle should do for this
+     *  cached state (-1 unknown, 0 off, 1 on): TRUE turns them on,
+     *  FALSE turns them off, null means the state is unknown so the
+     *  caller should read it first. Pure, unit-tested. */
+    public static Boolean ccToggleTarget(int cachedCc) {
+        if (cachedCc == 0) return Boolean.TRUE;
+        if (cachedCc == 1) return Boolean.FALSE;
+        return null;
+    }
+
     /** "On" / "Off" / "1" / "0" / "true" / "false" -> Boolean, null
      *  for anything else. Shared by the mute and closed-captions
      *  single reads — both reply with On/Off strings. */
@@ -389,6 +417,15 @@ public final class VizioApi {
     /** Clamp a volume level to the TV's 0-100 range. */
     public static int clampVolume(int level) {
         return Math.max(0, Math.min(100, level));
+    }
+
+    /** v48.21: hardware volume-key step — 5 points per press. */
+    public static final int VOLUME_KEY_STEP = 5;
+
+    /** v48.21: one volume-key press from the current level:
+     *  +step up, −step down, clamped to 0–100. */
+    public static int stepVolume(int current, int delta) {
+        return clampVolume(current + delta);
     }
 
     /** One ITEMS entry from a settings GET. */

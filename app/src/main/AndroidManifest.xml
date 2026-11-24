@@ -28,5 +28,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- v48.26: home-screen widget (power + volume, no app open).
+             exported=false: the system (AppWidgetManager) and our own
+             PendingIntents can still reach it; other apps cannot.
+             Label matches the shipped app label ("Quiet Remote"). -->
+        <receiver
+            android:name=".TvWidgetProvider"
+            android:exported="false"
+            android:label="Quiet Remote">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tv_widget_info" />
+        </receiver>
     </application>
 </manifest>

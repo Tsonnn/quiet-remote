@@ -13,16 +13,22 @@ mkdir -p "$BUILD"
   "$ROOT/app/src/main/java/com/tom/tvremote/TvRegistry.java" \
   "$ROOT/app/src/main/java/com/tom/tvremote/TouchpadGesture.java" \
   "$ROOT/app/src/main/java/com/tom/tvremote/CastVolume.java" \
+  "$ROOT/app/src/main/java/com/tom/tvremote/CastMedia.java" \
+  "$ROOT/app/src/main/java/com/tom/tvremote/WidgetSkipAd.java" \
   "$ROOT/test/ScanLogicTest.java" \
   "$ROOT/test/RemoteLogicTest.java" \
   "$ROOT/test/TvRegistryTest.java" \
   "$ROOT/test/RoomPillTest.java" \
-  "$ROOT/test/CastVolumeTest.java"
+  "$ROOT/test/CastVolumeTest.java" \
+  "$ROOT/test/CastMediaTest.java" \
+  "$ROOT/test/WidgetSkipAdTest.java"
 "$JAVA_HOME/bin/java" -cp "$BUILD" ScanLogicTest
 "$JAVA_HOME/bin/java" -cp "$BUILD" RemoteLogicTest
 "$JAVA_HOME/bin/java" -cp "$BUILD" TvRegistryTest
 "$JAVA_HOME/bin/java" -cp "$BUILD" RoomPillTest
 "$JAVA_HOME/bin/java" -cp "$BUILD" CastVolumeTest
+"$JAVA_HOME/bin/java" -cp "$BUILD" CastMediaTest
+"$JAVA_HOME/bin/java" -cp "$BUILD" WidgetSkipAdTest
 
 echo "== source checks (v3: power Toggle only, old retry popup gone) =="
 JAVA_DIR="$ROOT/app/src/main/java/com/tom/tvremote"
@@ -51,7 +57,6 @@ grep -q "lastScan" "$JAVA_DIR/MainActivity.java" \
   || fail_source "setup Step 2 does not list the live scan"
 grep -q "No TVs found yet" "$JAVA_DIR/MainActivity.java" \
   || fail_source "setup has no empty-before-scan state"
-# No user-visible string (quoted literal) in the app may contain a
 # TV model code or an IP address. The check is value-free on purpose:
 # it does not name any real model or address, so the test itself can
 # never leak one. The generic example IP is 192.168.1.50.
@@ -365,8 +370,10 @@ grep -q "hideTouchHint" "$JAVA_DIR/MainActivity.java" \
   && fail_source "old hide-forever hint still present"
 grep -q "Swipe to move" "$JAVA_DIR/MainActivity.java" \
   || fail_source "no touchpad hint"
+# v48.13: the hint never dims in any mode — the fade after
+# first use is gone entirely, in TV mode as in cast mode.
 grep -q "dimTouchHint" "$JAVA_DIR/MainActivity.java" \
-  || fail_source "hint does not dim (persistent) after first use"
+  && fail_source "hint still dims after first use"
 # --- Speaker icon IS the mute toggle; no separate Mute button ---
 grep -q "muteButton" "$JAVA_DIR/MainActivity.java" \
   && fail_source "separate Mute button still present"
@@ -1160,14 +1167,16 @@ grep -q "pinLp.topMargin = dp(8)" "$JAVA_DIR/MainActivity.java" \
   || fail_source "Settings PIN field has no gap above it"
 grep -q "ipLp.topMargin = dp(8)" "$JAVA_DIR/MainActivity.java" \
   || fail_source "manual IP field has no gap above it"
-# Main remote untouched: its rows already carry 8 dp top padding,
-# and no extra margin was added there (one screen, no scrolling).
-grep -q "navRow.setPadding(0, dp(8), 0, 0)" "$JAVA_DIR/MainActivity.java" \
-  || fail_source "main remote nav row lost its 8 dp top padding"
-grep -q "playbackRow.setPadding(0, dp(8), 0, 0)" "$JAVA_DIR/MainActivity.java" \
-  || fail_source "main remote playback row lost its 8 dp top padding"
-grep -q "volumeRow.setPadding(0, dp(8), 0, 0)" "$JAVA_DIR/MainActivity.java" \
-  || fail_source "main remote volume row lost its 8 dp top padding"
+# Main remote rows: 6 dp top padding since v48.24 (was 8 dp) —
+# the CC/Sleep row needed the room, so the nav / playback /
+# volume row gaps tightened deliberately. Still one screen, no
+# scrolling, no extra margin added there.
+grep -q "navRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "main remote nav row lost its 6 dp top padding"
+grep -q "playbackRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "main remote playback row lost its 6 dp top padding"
+grep -q "volumeRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "main remote volume row lost its 6 dp top padding"
 echo "PASS: v24 8 dp gap between stacked buttons + v23 names/press/icon kept"
 # --- Kept: v22 name/turn-on checks + v21 privacy still pass.
 grep -q "Turn the TV on with its regular remote first" "$JAVA_DIR/MainActivity.java" \
@@ -1461,11 +1470,21 @@ echo "$PILLS_BODY" | grep -q "setMinimumHeight(dp(36))" \
   || fail_source "room pills lost their 36 dp minimum height — pills can render at different heights"
 # --- Prefer the FULL name: the size steps down from the LONGEST
 # name in the row (> 10 chars -> 12 sp), so both pills share one
-# size and the row stays uniform. ---
-echo "$PILLS_BODY" | grep -q "room.length() > 10" \
+# size and the row stays uniform. v48.7: the rule lives in the
+# shared pillTextSizeSp helper (the Chromecast pill uses it too),
+# and rebuildTvPills calls it — same behaviour, one home.
+# v48.9: the step-down is now 11 sp, not 12 — 12 sp plus the
+# 14 dp icon still ellipsized "Bedroom Twelve" on the user's
+# screenshot; 11 sp with the 12 dp icons is the measured fix
+# (RoomPillTest). The v29 rule (step down for long names) is
+# unchanged, only the size. ---
+SIZE_BODY=$(sed -n '/private int pillTextSizeSp/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+echo "$SIZE_BODY" | grep -q "room.length() > 10" \
   || fail_source "room pills do not step down in size for long names"
-echo "$PILLS_BODY" | grep -q "pillSizeSp = 12" \
-  || fail_source "room pills do not step down to 12 sp for long names"
+echo "$SIZE_BODY" | grep -q "return 11" \
+  || fail_source "room pills do not step down to 11 sp for long names"
+echo "$PILLS_BODY" | grep -q "pillTextSizeSp()" \
+  || fail_source "room pills do not use the shared pill text size"
 echo "$PILLS_BODY" | grep -q "styledButton(tv.room, pillSizeSp" \
   || fail_source "room pills do not use the stepped-down size"
 # Tighter horizontal padding buys room for long names (was 14 dp
@@ -1777,4 +1796,1173 @@ grep -q "POWER_SETTLE_REREAD_MS" < <(sed -n '/private void sendKey/,/^    }/p' "
   || fail_source "v47.2 sendKey has no 5 s settle re-read after a power toggle"
 grep -q "key == VizioApi.KEY_POWER_TOGGLE" < <(sed -n '/private void sendKey/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
   || fail_source "v47.2 power-toggle handling is not guarded by KEY_POWER_TOGGLE"
-echo "PASS: v29 room pills never wrap (single-line + END ellipsize, long names step down to 12 sp, measured sizes) + model-name fix (Display Name fallback, scan renames model-only paired TVs) + header scrolls sideways for 4–5 TVs (96 dp min, cog/power fixed) + away TVs dim (tappable, says so) + v28 kept + v31 double-tap Select + v32 buttons at the bottom + v33 bigger swipe area, same look + v34 Refresh lists found TVs in Settings + v35 pad down in the thumb zone + v36 whole area above the buttons swipes + double-taps + v37 a TV can be removed from the top list + v38 KB is a drawn keyboard icon + v39 Settings footer reads the real version + v40 power button is green on, red off + v41 both buttons are soft 3D and the hint fits inside the centre + v42 YouTube and Netflix match the user's logos + v43 keyboard pops up by itself, Select not OK, Send leaves the dialog open + v44 keyboard hint corrected (Select presses the highlighted key, highlight SEARCH to run the search) + v45 keyboard dialog has a Search button (Enter, CODE 13 live test) + v46 power button turns green fast on launch (last-known power restored, early refresh in parallel with the scan) + v47 keyboard hint corrected (Send runs the search by itself in YouTube, Search presses Enter, kept for other apps) + v47.2 power button flips at once on a toggle and re-reads at 5 s"
+# v48: minimal Chromecast control — mDNS discovery, no Play
+# Services, no hardcoded devices. The media namespace and the
+# media commands exist, discovery runs on the TV scan path,
+# and nothing in the new code bakes in a device, an IP, or a
+# name. v48.7: the separate control view is deleted — the
+# inline strip is the only control surface, so the checks
+# below assert its absence instead of its presence.
+grep -q '"_googlecast._tcp"' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48 MainActivity has no _googlecast._tcp discovery"
+grep -q "restartCastDiscovery()" < <(sed -n '/private void rediscover(/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.2 rediscover does not restart Chromecast discovery"
+grep -q "stopCastDiscovery()" < <(sed -n '/protected void onDestroy/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48 onDestroy does not stop Chromecast discovery"
+grep -q "NS_MEDIA" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48 CastMedia has no media namespace"
+grep -q "getCastStatus" "$JAVA_DIR/CastVolume.java" \
+  || fail_source "v48 CastVolume has no getCastStatus"
+grep -q "mediaCommand" "$JAVA_DIR/CastVolume.java" \
+  || fail_source "v48 CastVolume has no mediaCommand"
+grep -q "buildCastControl" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.7 the deleted Chromecast control view is still built"
+grep -q "castScroll" < <(sed -n '/private void showRemote/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  && fail_source "v48.7 showRemote still hides the deleted Chromecast view"
+grep -q "castScroll" < <(sed -n '/private void showSettings/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  && fail_source "v48.7 showSettings still hides the deleted Chromecast view"
+grep -q "addCastButtons" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48 found-devices lists have no Chromecast buttons"
+grep -q "com.google.android.gms" "$JAVA_DIR/MainActivity.java" "$JAVA_DIR/CastVolume.java" "$JAVA_DIR/CastMedia.java" \
+  && fail_source "v48 pulled in Google Play Services"
+# (MainActivity already had two generic "e.g. 192.168.1.50" hints
+# from the manual-IP field — those are examples, not devices —
+# so this check covers only the new v48 files.)
+grep -q "192\.168" "$JAVA_DIR/CastMedia.java" "$JAVA_DIR/CastVolume.java" \
+  && fail_source "v48 hardcoded a LAN IP in the new code"
+# v48.1: a TV's built-in Cast must never list as a Chromecast —
+# the filter is the TXT "md" (Chromecast model) plus the known
+# TV IP, applied where a resolved service lands in the list.
+grep -q "isRealChromecast" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.1 CastMedia has no Chromecast filter"
+grep -q "isRealChromecast(txt, ip, tvIps)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.1 MainActivity does not filter resolved Cast services"
+grep -q '"md"' "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.1 CastMedia does not read the TXT md record"
+grep -q "contains(\"chromecast\")" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.1 filter does not recognise a Chromecast model"
+# v48.2: flaky discovery fixed two ways — discovery runs
+# continuously while a listing screen is visible (no 6-second
+# round to cut off late resolves), and found Chromecasts are
+# remembered in prefs so a missed round never empties the
+# list. They also list on the remote screen itself, below the
+# TV pills, never mixed into them.
+grep -q "CAST_DISCOVERY_MS" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.2 still has the 6-second discovery stop"
+grep -q "castStopHandler" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.2 still has the discovery stop timer"
+grep -q "restartCastDiscovery" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.2 has no clean-restart discovery for Refresh"
+grep -q "encodeDevices" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.2 CastMedia cannot persist Chromecasts"
+grep -q "decodeDevices" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.2 CastMedia cannot load persisted Chromecasts"
+grep -q '"cast_list"' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.2 MainActivity never loads or saves the cast list"
+grep -q "saveCastList" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.2 MainActivity never saves the cast list"
+grep -q "rebuildRemoteCastRow" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.2 remote screen has no Chromecast row"
+grep -q "remoteCastRow" < <(sed -n '/private View buildUi/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.2 Chromecast row is not built into the remote screen"
+grep -q "startCastDiscovery()" < <(sed -n '/private void showRemote/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.2 remote screen does not keep discovery running"
+grep -q "startCastDiscovery()" < <(sed -n '/private void showSettings/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.2 Settings does not keep discovery running"
+grep -q "stopCastDiscovery()" < <(sed -n '/protected void onPause/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.2 does not stop discovery in the background"
+grep -q "demoteDevices" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.2 Refresh does not demote live entries to last-seen"
+grep -q "last seen" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.2 last-seen entries do not say so"
+# The filter must run before anything is persisted: in the
+# resolve handler, isRealChromecast must appear above saveCastList.
+cast_body=$(sed -n '/private void onCastServiceResolved/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+filter_line=$(printf '%s' "$cast_body" | grep -n "isRealChromecast" | head -1 | cut -d: -f1)
+save_line=$(printf '%s' "$cast_body" | grep -n "saveCastList" | head -1 | cut -d: -f1)
+[ -n "$filter_line" ] && [ -n "$save_line" ] && [ "$filter_line" -lt "$save_line" ] \
+  || fail_source "v48.2 persists a Cast service before filtering it"
+# v48.30: the Cast diagnostics are gone (the user: remove them —
+# they did their job). The v48.3 diagnostics record, the
+# Settings sections, and the recording calls are all deleted;
+# the filter verdict and the discovery retry on resume stay.
+grep -q "verdictFor" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.30 CastMedia has no filter verdict"
+grep -q "isRealChromecast" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.30 CastMedia has no Chromecast filter"
+grep -q "CastDiag" "$JAVA_DIR/CastMedia.java" \
+  && fail_source "v48.30 CastMedia still has the diagnostics record"
+grep -q "upsertDiag\|findDiag\|diagText" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.30 MainActivity still records diagnostics"
+grep -q "Cast diagnostics" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.30 Settings still has a Cast diagnostics section"
+grep -q "castDiagView\|castStatusView\|noteCastStatus\|noteCastDiag" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.30 MainActivity still has diagnostics views or recording"
+grep -q "startCastDiscovery()" < <(sed -n '/protected void onResume/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.30 does not retry discovery on resume"
+# v48.4: resolve retry — resolves never returned for two of
+# three services (found by the v48.3 diagnostics, since
+# removed). Resolves now run one at a time from a queue,
+# each attempt gets a fresh listener, and a failed or
+# timed-out resolve retries up to 3 times.
+grep -q "ResolveRetry" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.4 CastMedia has no resolve retry state"
+grep -q "RESOLVE_MAX_ATTEMPTS = 3" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.4 resolve retry is not 3 attempts"
+grep -q "RESOLVE_TIMEOUT_MS = 5000" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.4 resolve has no 5-second timeout"
+grep -q "ResolveQueue" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.4 CastMedia has no serialized resolve queue"
+grep -q "queueCastResolve" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 MainActivity does not queue resolves"
+grep -q "pumpCastResolve" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 MainActivity never pumps the resolve queue"
+grep -q "new NsdManager.ResolveListener" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 resolve has no fresh listener per attempt"
+grep -q "castResolveListener" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.4 still uses one shared resolve listener"
+grep -q "RESOLVE_TIMEOUT_MS" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 MainActivity never arms the resolve timeout"
+grep -q "castResolveQueue.clear()" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 stop does not clear the resolve queue"
+# v48.5: strip status refresh — the user's live test showed
+# a Play that worked while the strip stayed frozen on
+# "Buffering…" + Play: the immediate re-read caught the
+# receiver's transient BUFFERING state and nothing ever
+# re-read. Commands now re-read after a 1 s settle, the strip
+# polls every 5 s while open, and a failed re-read keeps the
+# last good status instead of blanking the screen.
+grep -q "CAST_STATUS_SETTLE_MS = 1000" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.5 post-command re-read has no 1-second settle"
+grep -q "CAST_STATUS_POLL_MS = 5000" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.5 while-open status poll is not 5 seconds"
+grep -q "keepStatus" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.5 CastMedia has no keepStatus"
+grep -q "keepStatus(currentCastStatus" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.5 a failed re-read does not keep the last good status"
+cmd_body=$(sed -n '/private void castMediaCommand/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$cmd_body" | grep -q "postDelayed" \
+  || fail_source "v48.5 Play/Pause/Stop does not delay its status re-read"
+printf '%s' "$cmd_body" | grep -q "CAST_STATUS_SETTLE_MS" \
+  || fail_source "v48.5 Play/Pause/Stop re-read does not use the settle delay"
+# v48.7: the Chromecast volume slider is deleted with the
+# separate control view and the strip's own slider — the TV's
+# volume slider handles volume, so there is no Chromecast
+# volume path left at all.
+grep -q "castSetVolume" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.7 the deleted Chromecast volume path is still there"
+grep -q "startCastStatusPoll()" < <(sed -n '/private void openCastStrip/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.5 selecting a Chromecast never starts the status poll"
+grep -q "postDelayed(castStatusPoll, CastMedia.CAST_STATUS_POLL_MS)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.5 the status poll never re-posts itself"
+for fn in "private void showSettings()" "private void showRemote()" "private void showSetup()" "protected void onPause()" "protected void onDestroy()"; do
+  grep -q "stopCastStatusPoll()" < <(sed -n "/$fn/,/^    }/p" "$JAVA_DIR/MainActivity.java") \
+    || fail_source "v48.5 $fn does not stop the status poll"
+done
+grep -q "stopCastStatusPoll()" < <(sed -n '/protected void onResume/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  && fail_source "v48.5 resume must not stop the poll it restarts"
+grep -q "startCastStatusPoll()" < <(sed -n '/protected void onResume/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.5 resume does not restart the status poll when the strip is open"
+refresh_body=$(sed -n '/private void refreshCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$refresh_body" | grep -q "castStripVisible()" \
+  || fail_source "v48.5 a status read runs even when the strip is hidden"
+# v48.6: inline Chromecast mini-player on the remote screen —
+# the user asked to control the Chromecast from the same screen
+# instead of opening a separate view. The row button is now
+# a toggle: tap once to select (dark, like a selected TV
+# pill) and the strip appears under the row; tap again to
+# deselect and hide it. The strip reuses the v48.5 status
+# mechanism (1 s settle, 5 s poll) and the existing command
+# paths; TV-pill selection is untouched. v48.7: the Settings
+# list no longer opens the deleted control view — it returns
+# to the remote with the strip open.
+grep -q "stripNowLine" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.6 CastMedia has no strip now-playing line"
+grep -q "Nothing casting right now" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.6 idle Chromecast has no Nothing casting label"
+grep -q "selectedCast" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 MainActivity has no Chromecast selection state"
+grep -q "toggleCastStrip" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 the remote-row button does not toggle the strip"
+toggle_body=$(sed -n '/private void toggleCastStrip/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+# v48.9: the hide half moved into closeCastStrip (one teardown
+# shared with selectTv) — the toggle calls it, it does not
+# inline the hide any more.
+printf '%s' "$toggle_body" | grep -q "closeCastStrip()" \
+  || fail_source "v48.9 tapping again does not close the strip"
+printf '%s' "$toggle_body" | grep -q "openCastStrip(e)" \
+  || fail_source "v48.6 tapping does not open the strip for the selected Chromecast"
+open_body=$(sed -n '/private void openCastStrip/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$open_body" | grep -q "castStrip.setVisibility(View.VISIBLE)" \
+  || fail_source "v48.6 tapping does not show the strip"
+printf '%s' "$open_body" | grep -q "startCastStatusPoll()" \
+  || fail_source "v48.6 selecting a Chromecast does not start the status poll"
+printf '%s' "$open_body" | grep -q "refreshCastStatus()" \
+  || fail_source "v48.6 selecting a Chromecast does not read its status at once"
+row_body=$(sed -n '/private void rebuildRemoteCastRow/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$row_body" | grep -q "toggleCastStrip" \
+  || fail_source "v48.6 the remote-screen button does not toggle the strip"
+printf '%s' "$row_body" | grep -q "showCastControl" \
+  && fail_source "v48.6 the remote-screen tap still opens the separate control view"
+printf '%s' "$row_body" | grep -q "selected ? COL_SURFACE2 : COL_PILL_OFF" \
+  || fail_source "v48.6 the selected Chromecast button does not paint dark like a selected TV pill"
+paint_body=$(sed -n '/private void paintCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$paint_body" | grep -q "castStripNowView" \
+  || fail_source "v48.6 the strip never shows what is playing"
+printf '%s' "$paint_body" | grep -q "stripNowLine" \
+  || fail_source "v48.6 the strip does not use its own now-playing line"
+printf '%s' "$paint_body" | grep -q "castStripPlayPauseButton" \
+  || fail_source "v48.6 the strip Play/Pause button never updates"
+printf '%s' "$refresh_body" | grep -q "castStripVisible()" \
+  || fail_source "v48.6 a status read never runs for the strip"
+grep -q "!castStripVisible()" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 the status poll never runs while the strip is open"
+remote_body=$(sed -n '/private void showRemote/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$remote_body" | grep -q "castStripVisible()" \
+  || fail_source "v48.6 coming back to the remote does not resume the strip poll"
+cast_buttons_body=$(sed -n '/private void addCastButtons/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$cast_buttons_body" | grep -q "showCastControl" \
+  && fail_source "v48.7 the Settings list still opens the deleted control view"
+printf '%s' "$cast_buttons_body" | grep -q "showRemote()" \
+  || fail_source "v48.7 tapping a Chromecast in the list does not return to the remote screen"
+printf '%s' "$cast_buttons_body" | grep -q "openCastStrip" \
+  || fail_source "v48.7 tapping a Chromecast in the list does not open the strip"
+select_body=$(sed -n '/private void selectTv/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+# v48.9: selecting a TV pill now LEAVES Chromecast mode —
+# tapping a TV pill is how you switch back to a TV (the
+# v48.6 rule that selectTv never touched the strip is
+# deliberately superseded here).
+printf '%s' "$select_body" | grep -q "closeCastStrip()" \
+  || fail_source "v48.9 selecting a TV pill does not leave Chromecast mode"
+# v48.7: the separate Chromecast control view is deleted
+# (the user: "get rid of this page") — the strip is the only
+# control surface. Tapping a Chromecast in the Settings /
+# setup list returns to the remote with the strip open; the
+# strip's unreachable line is short with no Refresh
+# instruction; the Chromecast pill is the same size as the
+# TV pills and carries the hand-drawn Cast icon; the strip
+# has no volume slider (the TV slider handles volume).
+for dead in "showCastControl" "castScroll" "buildCastControl" "castControlVisible" "castFromSettings" "castSetVolume" "castStripVolumeBar" "castStripVolumeView"; do
+  grep -q "$dead" "$JAVA_DIR/MainActivity.java" \
+    && fail_source "v48.7 the deleted control view or volume path is still there: $dead"
+done
+grep -q "then go back and tap Refresh" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.7 the strip still tells the user to go back and tap Refresh"
+grep -q "Couldn't reach this Chromecast — check it's on and on WiFi\." "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.7 the strip has no short unreachable line"
+grep -q "CastIconDrawable" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.7 the Chromecast pill has no Cast icon"
+icon_body=$(sed -n '/private static class CastIconDrawable/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$icon_body" | grep -q "drawRoundRect" \
+  || fail_source "v48.7 the Cast icon has no screen rectangle"
+printf '%s' "$icon_body" | grep -q "drawArc" \
+  || fail_source "v48.7 the Cast icon has no radiating arcs"
+printf '%s' "$row_body" | grep -q "setCompoundDrawablesWithIntrinsicBounds" \
+  || fail_source "v48.7 the Cast icon is not on the Chromecast pill"
+printf '%s' "$row_body" | grep -q "new CastIconDrawable" \
+  || fail_source "v48.7 the Chromecast pill does not use the Cast icon drawable"
+printf '%s' "$row_body" | grep -q "(Chromecast)" \
+  && fail_source "v48.7 the pill text gained a (Chromecast) suffix"
+printf '%s' "$row_body" | grep -q "pillWidthPx" \
+  || fail_source "v48.7 the Chromecast pill is not the same width as the TV pills"
+printf '%s' "$row_body" | grep -q "pillTextSizeSp" \
+  || fail_source "v48.7 the Chromecast pill does not share the TV pills' text size"
+printf '%s' "$row_body" | grep -q "setMinimumHeight(dp(36))" \
+  || fail_source "v48.7 the Chromecast pill is not the same height as the TV pills"
+tv_pills_body=$(sed -n '/private void rebuildTvPills/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$tv_pills_body" | grep -q "CastIconDrawable" \
+  && fail_source "v48.7 the TV pills gained a Cast icon"
+grep -q "TvIconDrawable" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.7 the TV pills have no TV icon"
+tv_icon_body=$(sed -n '/private static class TvIconDrawable/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$tv_icon_body" | grep -q "drawRoundRect" \
+  || fail_source "v48.7 the TV icon has no screen rectangle"
+printf '%s' "$tv_icon_body" | grep -q "drawLine" \
+  || fail_source "v48.7 the TV icon has no stand"
+printf '%s' "$tv_pills_body" | grep -q "setCompoundDrawablePadding(dp(4))" \
+  || fail_source "v48.7 the TV pills have no room for the TV icon next to the name"
+selector_body=$(sed -n '/private void updateSelectorButtons/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$selector_body" | grep -q "TvIconDrawable" \
+  || fail_source "v48.7 the TV icon does not follow the pill's selected colour"
+printf '%s' "$row_body" | grep -q "mutedText(\"Chromecast:\"" \
+  && fail_source "v48.7 the remote row still carries the redundant Chromecast: label"
+strip_body=$(sed -n '/private void openCastStrip/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$strip_body" | grep -q "castStripVolumeBar\|castStripVolumeView" \
+  && fail_source "v48.7 the strip still sets up a volume slider"
+# v48.8: the Chromecast row sits close under the TV pills — only
+# 2 dp of top padding on the row, not the old 6 dp.
+ui_body=$(sed -n '/private View buildUi/,/private ScrollView buildSettings/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$ui_body" | grep -q "remoteCastRow.setPadding(0, dp(2), 0, 0)" \
+  || fail_source "v48.8 the Chromecast row is not close under the TV pills"
+# v48.9: (1) the bottom slider follows the Chromecast
+# while one is selected — setVolumeTo branches to the cast
+# send before the TV auth guard, and the poll paints the
+# slider from the receiver's volume (never mid-drag);
+# deselecting restores the TV volume. (2) "Bedroom Twelve"
+# fits: long names step to 11 sp, pill icons are 12 dp.
+# (3) the pad shrinks by the strip's height while the strip
+# is open, so nothing is cut off at the bottom — no
+# ScrollView. (4) cast mode dims + disables the TV controls
+# while a Chromecast is selected; the pills, gear, slider
+# and strip stay live.
+vol_body=$(sed -n '/private void setVolumeTo/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+cast_line=$(printf '%s' "$vol_body" | grep -n "selectedCast != null" | head -1 | cut -d: -f1)
+auth_line=$(printf '%s' "$vol_body" | grep -n "authToken == null" | head -1 | cut -d: -f1)
+[ -n "$cast_line" ] && [ -n "$auth_line" ] && [ "$cast_line" -lt "$auth_line" ] \
+  || fail_source "v48.9 the slider does not branch to the Chromecast before the TV auth guard"
+grep -q "private void setCastVolumeTo" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 there is no Chromecast volume send for the slider"
+cast_vol_body=$(sed -n '/private void setCastVolumeTo/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$cast_vol_body" | grep -q 'castClientFor("cast:" + ip)' \
+  || fail_source "v48.9 the Chromecast volume send does not use the cast client"
+printf '%s' "$cast_vol_body" | grep -q "cast.setVolume(ip, level)" \
+  || fail_source "v48.9 the Chromecast volume send is not one absolute SET_VOLUME"
+printf '%s' "$cast_vol_body" | grep -q "Volume: \" + actual + \" (Chromecast)\"" \
+  || fail_source "v48.9 the Chromecast volume send has no status-line confirmation"
+printf '%s' "$cast_vol_body" | grep -q "MUTE_TOGGLE" \
+  && fail_source "v48.9 the Chromecast volume path touches the TV mute — the mute button stays TV-only"
+grep -q "sendKey(VizioApi.KEY_MUTE_TOGGLE" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 the mute button no longer sends the TV mute key"
+grep -q "volumeDragging = true" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 the slider has no drag flag for the poll to respect"
+grep -q "volumeDragging = false" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 the drag flag is never cleared on release"
+paint_body=$(sed -n '/private void paintCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$paint_body" | grep -q "st.volumeLevel != null && !volumeDragging" \
+  || fail_source "v48.9 the poll does not paint the slider from the Chromecast volume (or paints it mid-drag)"
+printf '%s' "$paint_body" | grep -q "volumeBar.setProgress(castVol)" \
+  || fail_source "v48.9 the poll never moves the slider to the Chromecast level"
+close_body=$(sed -n '/private void closeCastStrip/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$close_body" | grep -q "showCachedState()" \
+  || fail_source "v48.9 deselecting the Chromecast does not restore the TV volume on the slider"
+printf '%s' "$close_body" | grep -q "setCastMode(false)" \
+  || fail_source "v48.9 deselecting the Chromecast does not restore the TV controls"
+printf '%s' "$close_body" | grep -q "resizeTouchpad()" \
+  || fail_source "v48.9 deselecting the Chromecast does not restore the full-size pad"
+printf '%s' "$close_body" | grep -q "stopCastStatusPoll()" \
+  || fail_source "v48.9 deselecting the Chromecast does not stop the status poll"
+grep -q "return 11" < <(sed -n '/private int pillTextSizeSp/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.9 long pill names do not step down to 11 sp"
+grep -q "new CastIconDrawable(this, 12" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 the Cast icon is not 12 dp"
+grep -q "new TvIconDrawable(this, 12" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 the TV icon is not 12 dp"
+grep -q "new CastIconDrawable(this, 14" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.9 the old 14 dp Cast icon is still there"
+grep -q "new TvIconDrawable(this, 14" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.9 the old 14 dp TV icon is still there"
+grep -q "private void resizeTouchpad" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 there is no pad resize for the open strip"
+resize_body=$(sed -n '/private void resizeTouchpad/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$resize_body" | grep -q "castStrip.getHeight()" \
+  || fail_source "v48.9 the pad shrink does not measure the strip's height"
+printf '%s' "$resize_body" | grep -q "Math.max(touchpadFullDiameterPx - shrinkPx, dp(240))" \
+  || fail_source "v48.9 the shrunk pad has no 240 dp minimum"
+printf '%s' "$resize_body" | grep -q "touchpadSwipeRadiusPx" \
+  || fail_source "v48.9 the resized pad does not update its swipe radius"
+printf '%s' "$resize_body" | grep -q "0.46f" \
+  || fail_source "v48.9 the resized pad does not keep the hint inside the centre button"
+open_body=$(sed -n '/private void openCastStrip/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$open_body" | grep -q "resizeTouchpad()" \
+  || fail_source "v48.9 selecting a Chromecast never shrinks the pad for the strip"
+printf '%s' "$open_body" | grep -q "setCastMode(true)" \
+  || fail_source "v48.9 selecting a Chromecast does not enter cast mode"
+grep -q "castStripNowView.setSingleLine(true)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 the strip's now-playing line can still wrap and grow the strip"
+grep -q "private void setCastMode" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 there is no cast mode for the TV controls"
+cast_mode_body=$(sed -n '/private void setCastMode/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+for v in touchpadView navRowView playbackRowView appRowView speakerIcon powerToggleButton; do
+  printf '%s' "$cast_mode_body" | grep -q "$v" \
+    || fail_source "v48.9 cast mode does not dim the $v"
+done
+printf '%s' "$cast_mode_body" | grep -q "volumeBar.setEnabled(castOn || tvOn)" \
+  || fail_source "v48.9 the volume slider does not stay live in cast mode"
+grep -q "playbackRowView = playbackRow" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 the playback row is not saved for cast mode"
+grep -q "appRowView = appRow" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 the app row is not saved for cast mode"
+grep -q "setCastDim" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.9 cast mode has no shared dim helper"
+# v48.10: casting TO a TV (SmartCast built-in Cast) — a cast
+# session is a state of that TV, not a separate device. The
+# v48.1 filter stays (TVs never list as Chromecasts); the
+# selected TV's receiver is polled directly by IP, and the
+# same strip appears only while the session is active. The
+# pill swaps to the Cast icon while that TV is casting. TV
+# controls stay live — setCastMode is dongle-only.
+grep -q "isActiveCast" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.10 CastMedia has no active-cast-session check"
+grep -q "private void refreshTvCastStatus" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.10 there is no TV cast status watch"
+grep -q "private void paintTvCastStatus" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.10 there is no TV cast strip painter"
+grep -q "private void hideTvCastStrip" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.10 there is no TV cast strip hide"
+grep -q "private void tvCastMediaCommand" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.10 there is no TV cast media command"
+grep -q "boolean\[\] tvCasting" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.10 there is no per-TV casting state"
+tv_watch_body=$(sed -n '/private void refreshTvCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$tv_watch_body" | grep -q 'castClientFor("tvcast:" + ips\[i\])' \
+  || fail_source "v48.10 the TV watch does not connect to the TV's built-in Cast receiver directly"
+printf '%s' "$tv_watch_body" | grep -q "isActiveCast()" \
+  || fail_source "v48.10 the TV watch does not gate on an active cast session"
+printf '%s' "$tv_watch_body" | grep -q "paintTvCastStatus" \
+  || fail_source "v48.10 the TV watch does not paint the strip from the session"
+tv_paint_body=$(sed -n '/private void paintTvCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$tv_paint_body" | grep -q "hideTvCastStrip()" \
+  || fail_source "v48.10 an idle or ended TV session does not hide the strip"
+printf '%s' "$tv_paint_body" | grep -q "setCastMode" \
+  && fail_source "v48.10 the TV strip enters cast mode — TV controls must stay live"
+printf '%s' "$tv_paint_body" | grep -q "stripNowLine" \
+  || fail_source "v48.10 the TV strip does not show what is playing"
+printf '%s' "$tv_paint_body" | grep -q "castStripPlayPauseButton" \
+  || fail_source "v48.10 the TV strip Play/Pause button never updates"
+poll_body=$(sed -n '/private final Runnable castStatusPoll/,/^    };/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$poll_body" | grep -q "refreshTvCastStatus()" \
+  || fail_source "v48.10 the status poll does not watch the TVs"
+printf '%s' "$poll_body" | grep -q "remoteScroll.getVisibility() != View.VISIBLE" \
+  || fail_source "v48.10 the status poll does not run while the remote is on screen"
+selector_body=$(sed -n '/private void updateSelectorButtons/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$selector_body" | grep -q "tvCasting" \
+  || fail_source "v48.10 the TV pill does not swap its icon while casting"
+printf '%s' "$selector_body" | grep -q "casting ? new CastIconDrawable" \
+  || fail_source "v48.10 the casting TV pill does not show the Cast icon"
+printf '%s' "$selector_body" | grep -q "new TvIconDrawable" \
+  || fail_source "v48.10 the non-casting TV pill lost its TV icon"
+select_body=$(sed -n '/private void selectTv/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$select_body" | grep -q "hideTvCastStrip()" \
+  || fail_source "v48.10 switching TVs does not hide the old TV's strip"
+printf '%s' "$select_body" | grep -q "refreshTvCastStatus()" \
+  || fail_source "v48.10 switching TVs does not check the new TV for a cast at once"
+grep -q 'castStripCommand("STOP")' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.10 the strip Stop button does not target whatever the strip is showing"
+tv_cmd_body=$(sed -n '/private void tvCastMediaCommand/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$tv_cmd_body" | grep -q "mediaCommand(ip, type)" \
+  || fail_source "v48.10 the TV cast command does not send a media command to the TV"
+printf '%s' "$tv_cmd_body" | grep -q "CAST_STATUS_SETTLE_MS" \
+  || fail_source "v48.10 the TV cast command does not re-read after the settle delay"
+# The v48.1 filter is untouched — the TVs' built-in Cast
+# still never lists as a Chromecast entry (the verdict lives
+# in CastMedia now that the diagnostics are gone, v48.30).
+grep -q "isRealChromecast" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.10 the Chromecast filter is gone from discovery"
+grep -q "verdictFor" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.10 the filter verdict is gone"
+# v48.11: TV-cast re-detection after lock/unlock took ~30 s,
+# not one poll tick. Root cause: a dead "tvcast:" socket after
+# sleep was retried until the 60 s idle gate expired, and a
+# null read was treated as "session ended", wiping the pill
+# icon + strip. The receiver's volumeLevel (1.0) is the cast
+# session's own level, not the TV's SmartCast volume, so the
+# TV strip never paints the slider from it. The 48 dp volume
+# thumb also needs room at both ends (half cut off at 100%,
+# overlapping the speaker at 0%).
+recv_body=$(sed -n '/public synchronized String getReceiverStatusJson/,/^        }/p' "$JAVA_DIR/CastVolume.java")
+[ "$(printf '%s' "$recv_body" | grep -c "requestReceiverStatus()")" = "2" ] \
+  || fail_source "v48.11 the Cast status read does not retry once on a fresh connection"
+printf '%s' "$recv_body" | grep -q "if (!connect(ip)) return null;" \
+  || fail_source "v48.11 the Cast status retry does not reconnect first"
+printf '%s' "$tv_watch_body" | grep -q "if (results\[i\] == null) continue;" \
+  || fail_source "v48.11 a failed TV-cast read still clears the known session"
+printf '%s' "$tv_watch_body" | grep -q "results\[selIndex\] != null" \
+  || fail_source "v48.11 a failed TV-cast read still hides the strip"
+printf '%s' "$poll_body" | grep -q "if (!castStripVisible()) return;" \
+  && fail_source "v48.11 the status poll still dies when the strip is hidden"
+printf '%s' "$poll_body" | grep -q "castStatusHandler.postDelayed(castStatusPoll, CastMedia.CAST_STATUS_POLL_MS);" \
+  || fail_source "v48.11 the status poll does not re-post every tick"
+printf '%s' "$tv_paint_body" | grep -q "volumeBar.setProgress" \
+  && fail_source "v48.11 the TV strip still paints the slider from the receiver volume"
+cast_paint_body=$(sed -n '/private void paintCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$cast_paint_body" | grep -q "volumeBar.setProgress" \
+  || fail_source "v48.11 the dongle strip lost its volume paint"
+grep -q "volumeBar.setPadding(dp(24), 0, dp(24), 0);" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.11 the volume thumb has no room at the ends"
+# v48.12: with a Chromecast dongle selected, a pad double-tap
+# skips the ad on the dongle (SKIP_AD, the same media message
+# shape as Play/Pause/Stop) instead of Select. Swipes stay
+# dead in cast mode, the pad stays enabled but dimmed with a
+# hint that says so, and a pairing refresh cannot kill it.
+# Casting to a TV is unchanged — double-tap still Selects.
+pad_up_body=$(sed -n '/private boolean padTouchUp/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+dtap_line=$(printf '%s' "$pad_up_body" | grep -n "isDoubleTap" | head -1 | cut -d: -f1)
+skip_line=$(printf '%s' "$pad_up_body" | grep -n 'castStripCommand("SKIP_AD")' | head -1 | cut -d: -f1)
+sel_line=$(printf '%s' "$pad_up_body" | grep -n 'sendKey(VizioApi.KEY_NAV_SELECT, "Select")' | head -1 | cut -d: -f1)
+[ -n "$dtap_line" ] && [ -n "$skip_line" ] && [ -n "$sel_line" ] \
+  && [ "$skip_line" -gt "$dtap_line" ] && [ "$sel_line" -gt "$skip_line" ] \
+  || fail_source "v48.12 the pad double-tap does not send SKIP_AD to the dongle and Select to a TV"
+printf '%s' "$pad_up_body" | grep -q "if (selectedCast != null) return true;" \
+  || fail_source "v48.12 pad swipes are not swallowed in cast mode"
+printf '%s' "$cast_mode_body" | grep -q "setEnabledDeep(touchpadView, castOn || tvOn)" \
+  || fail_source "v48.12 the pad is not kept enabled in cast mode"
+printf '%s' "$cast_mode_body" | grep -q "to skip ad" \
+  || fail_source "v48.12 the pad hint does not say double-tap skips the ad"
+printf '%s' "$cast_mode_body" | grep -q "Swipe to move" \
+  || fail_source "v48.12 the pad hint is not restored out of cast mode"
+controls_body=$(sed -n '/private void setControlsEnabled/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$controls_body" | grep -q "selectedCast != null && child == touchpadView" \
+  || fail_source "v48.12 a pairing refresh can kill the pad while a dongle is selected"
+grep -q 'if ("STOP".equals(type))' "$JAVA_DIR/CastVolume.java" \
+  || fail_source "v48.12 the session-id clear is no longer STOP-only"
+# v48.13: the hint is full brightness in every mode. Dimming
+# the pad container dimmed the hint too (0.4 x 0.5 = 0.2,
+# unreadable), so now only the drawn disc is dimmed, the hint
+# is set to full alpha, and the fade after first use is gone
+# entirely — the hint never dims in any mode.
+printf '%s' "$cast_mode_body" | grep -q "touchpadView.setAlpha(dim)" \
+  && fail_source "v48.13 the pad container is still dimmed in cast mode, dimming the hint with it"
+printf '%s' "$cast_mode_body" | grep -q "touchpadRingView.setAlpha(dim)" \
+  || fail_source "v48.13 the disc is not dimmed in cast mode"
+printf '%s' "$cast_mode_body" | grep -q "touchHintView.setAlpha(1f)" \
+  || fail_source "v48.13 the hint is not full brightness in cast mode"
+grep -q "dimTouchHint" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.13 the hint still fades after first use"
+# v48.14: the strip has a Skip Ad button after Stop — a visible
+# button is easier than remembering the double-tap. Same SKIP_AD
+# media message, via castStripCommand, so it targets whatever the
+# strip is showing (dongle or TV cast). One row fits on the test phone
+# (measured 217.5 dp of 360 dp), so the strip height is unchanged.
+strip_build=$(sed -n '/castStrip = new LinearLayout/,/root.addView(castStrip)/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$strip_build" | grep -q 'settingsButton("Skip Ad", 14)' \
+  || fail_source "v48.14 the strip has no Skip Ad button"
+stop_add_line=$(printf '%s' "$strip_build" | grep -n "stripRow.addView(castStripStopButton)" | head -1 | cut -d: -f1 || true)
+skip_add_line=$(printf '%s' "$strip_build" | grep -n "stripRow.addView(castStripSkipAdButton)" | head -1 | cut -d: -f1 || true)
+[ -n "$stop_add_line" ] && [ -n "$skip_add_line" ] && [ "$skip_add_line" -gt "$stop_add_line" ] \
+  || fail_source "v48.14 the Skip Ad button is not after Stop in the strip"
+skip_btn_body=$(sed -n '/castStripSkipAdButton = settingsButton/,/stripRow.addView(castStripSkipAdButton)/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$skip_btn_body" | grep -q 'castStripCommand("SKIP_AD")' \
+  || fail_source "v48.14 the Skip Ad button does not send SKIP_AD via castStripCommand"
+paint_body=$(sed -n '/private void paintCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$paint_body" | grep -q "castStripSkipAdButton.setEnabled(canControl)" \
+  || fail_source "v48.14 the dongle strip does not enable the Skip Ad button with the session"
+tv_paint_body=$(sed -n '/private void paintTvCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$tv_paint_body" | grep -q "castStripSkipAdButton.setEnabled(true)" \
+  || fail_source "v48.14 the TV strip does not enable the Skip Ad button"
+# v48.15: auto-skip ads — while the strip is open, a skippable ad
+# is skipped by itself, once per break clip. The ad fields parse
+# from MEDIA_STATUS breakStatus (whenSkippable is the time from the
+# clip start when it becomes skippable, per Google's BreakStatus
+# docs; undefined means not skippable), a Settings switch defaults
+# ON, and the Skip Ad button / double-tap are untouched.
+grep -q "breakStatus" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.15 the ad-break fields are not parsed from MEDIA_STATUS"
+grep -q "isSkippableAd" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.15 there is no skippable-ad check"
+grep -q "maybeAutoSkipAd" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.15 there is no auto-skip hook"
+refresh_body=$(sed -n '/private void refreshCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$refresh_body" | grep -q "maybeAutoSkipAd" \
+  || fail_source "v48.15 the dongle strip does not auto-skip"
+printf '%s' "$tv_paint_body" | grep -q "maybeAutoSkipAd" \
+  || fail_source "v48.15 the TV strip does not auto-skip"
+skip_body=$(sed -n '/private void maybeAutoSkipAd/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$skip_body" | grep -q 'castStripCommand("SKIP_AD")' \
+  || fail_source "v48.15 auto-skip does not send SKIP_AD via castStripCommand"
+printf '%s' "$skip_body" | grep -q "isSkippableAd()" \
+  || fail_source "v48.15 auto-skip does not check the ad is skippable"
+printf '%s' "$skip_body" | grep -q "lastAutoSkippedAdKey = key" \
+  || fail_source "v48.15 auto-skip does not remember the clip it skipped"
+printf '%s' "$skip_body" | grep -q "autoSkipAdsOn()" \
+  || fail_source "v48.15 auto-skip does not check the switch"
+grep -q "Auto-skip ads" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.15 there is no Auto-skip ads section in Settings"
+grep -q "getBoolean(PREF_AUTO_SKIP_ADS, true)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.15 auto-skip does not default ON"
+# v48.16: ad countdown in the strip line — while a cast ad
+# break is playing and not yet skippable, the strip line reads
+# "Skippable in Ns"; once skippable it reads "Skippable now".
+# A 1 s ticker repaints the line from the last polled break
+# times between the 5 s polls; it never sends anything.
+grep -q "CAST_AD_COUNTDOWN_TICK_MS" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.16 there is no ad-countdown tick interval"
+grep -q "skippableInSeconds" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.16 there is no countdown-seconds helper"
+grep -q "adCountdownText" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.16 there is no countdown text helper"
+grep -q "Skippable in " "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.16 the countdown never reads Skippable in Ns"
+grep -q "Skippable now" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.16 the countdown never reads Skippable now"
+grep -q "castAdCountdownTick" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.16 there is no countdown ticker"
+grep -q "updateAdCountdownTicker" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.16 the ticker is never started or stopped"
+grep -q "stopAdCountdownTicker" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.16 the ticker is never stopped"
+grep -q "lastCastStatusPollUptimeMs" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.16 the ticker has no last-poll time to count down from"
+grep -q "adCountdownElapsedSeconds" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.16 the ticker has no elapsed-seconds helper"
+printf '%s' "$paint_body" | grep -q "stripNowLine(st, adCountdownElapsedSeconds(st))" \
+  || fail_source "v48.16 the dongle strip line does not carry the countdown"
+printf '%s' "$tv_paint_body" | grep -q "stripNowLine(st, adCountdownElapsedSeconds(st))" \
+  || fail_source "v48.16 the TV strip line does not carry the countdown"
+tick_body=$(sed -n '/private final Runnable castAdCountdownTick/,/    };/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$tick_body" | grep -q "maybeAutoSkipAd\|SKIP_AD" \
+  && fail_source "v48.16 the countdown ticker touches auto-skip"
+printf '%s' "$tick_body" | grep -q "stripNowLine(st, elapsed)" \
+  || fail_source "v48.16 the ticker does not repaint the strip line"
+close_body=$(sed -n '/private void closeCastStrip/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$close_body" | grep -q "stopAdCountdownTicker" \
+  || fail_source "v48.16 closing the dongle strip does not stop the ticker"
+hide_body=$(sed -n '/private void hideTvCastStrip/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$hide_body" | grep -q "AdCountdownTicker" \
+  || fail_source "v48.16 hiding the TV strip does not stop the ticker"
+refresh_body2=$(sed -n '/private void refreshCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$refresh_body2" | grep -q "updateAdCountdownTicker" \
+  || fail_source "v48.16 the dongle poll does not restart the ticker"
+printf '%s' "$refresh_body2" | grep -q "lastCastStatusPollUptimeMs" \
+  || fail_source "v48.16 the dongle poll does not re-time the countdown"
+# v48.30: the v48.17 last-cast-status diagnostics are gone —
+# no cast-status text, no supportedMediaCommands decode, no
+# raw-JSON truncation, no Last cast status section, and the
+# strip polls no longer record anything for Settings.
+grep -q "castStatusDiagText" "$JAVA_DIR/CastMedia.java" \
+  && fail_source "v48.30 CastMedia still has the cast-status diagnostics text"
+grep -q "supportedMediaCommandsText\|CAST_STATUS_RAW_MAX_CHARS" "$JAVA_DIR/CastMedia.java" \
+  && fail_source "v48.30 CastMedia still has the status-decode helpers"
+grep -q "Last cast status (testing only)" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.30 Settings still has a Last cast status section"
+grep -q "updateCastStatusUi\|noteCastStatus" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.30 MainActivity still records the last cast status"
+printf '%s' "$refresh_body2" | grep -q "noteCastStatus" \
+  && fail_source "v48.30 the dongle poll still records the last status"
+tv_refresh_body=$(sed -n '/private void refreshTvCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$tv_refresh_body" | grep -q "noteCastStatus" \
+  && fail_source "v48.30 the TV poll still records the last status"
+# v48.30: the v48.18 cast-status history is gone too — no
+# history text, no size limit, no distinct-status check, no
+# recorder, no snapshot type, and MainActivity keeps none.
+grep -q "castStatusHistoryText\|CAST_STATUS_HISTORY_MAX" "$JAVA_DIR/CastMedia.java" \
+  && fail_source "v48.30 CastMedia still has the cast-status history"
+grep -q "castStatusDiffers\|recordCastStatus\|CastStatusSnapshot" "$JAVA_DIR/CastMedia.java" \
+  && fail_source "v48.30 CastMedia still has the history helpers"
+grep -q "castStatusHistory" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.30 MainActivity still keeps a cast-status history"
+# v48.19: Goodnight — one tap turns off every TV that is on.
+# The Vizio API has only a Power TOGGLE, so a TV is toggled
+# ONLY when its last-known power is 1; off (0) and unknown
+# (-1) are never toggled, or Goodnight would switch a TV ON.
+grep -q "goodnightTargets" "$JAVA_DIR/TvRegistry.java" \
+  || fail_source "v48.19 there is no Goodnight target selection"
+grep -q "cachedPower\[i\] == 1" "$JAVA_DIR/TvRegistry.java" \
+  || fail_source "v48.19 Goodnight does not toggle only when power is on"
+grep -q '"Goodnight"' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.19 there is no Goodnight button label"
+grep -q "private void goodnight" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.19 there is no goodnight() handler"
+goodnight_body=$(sed -n '/private void goodnight/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$goodnight_body" | grep -q "goodnightTargets" \
+  || fail_source "v48.19 goodnight() does not use the only-if-on selection"
+printf '%s' "$goodnight_body" | grep -q "sendPowerToggleTo" \
+  || fail_source "v48.19 goodnight() does not send a toggle per on-TV"
+grep -q "private void sendPowerToggleTo" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.19 there is no per-TV power toggle sender"
+grep -q "KEY_POWER_TOGGLE\[0\], VizioApi.KEY_POWER_TOGGLE\[1\]" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.19 the per-TV toggle does not send the power toggle key"
+# v48.20: auto-skip on BUFFERING — the Vizio built-in receiver
+# never reports ads (a confirmed ad still reads as the movie,
+# BUFFERING, no breakStatus, no Skip-ad bit), so a BUFFERING
+# status sends SKIP_AD by itself: at most 2 sends per buffering
+# episode (once when first seen, once ~6 s later), gated by the
+# same Auto-skip switch. The v48.15 breakStatus auto-skip, the
+# Skip Ad button, and double-tap are untouched.
+grep -q "BufferingSkipGuard" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.20 there is no buffering-skip guard"
+grep -q "SECOND_SEND_DELAY_MS" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.20 there is no second-send delay"
+grep -q "SECOND_SEND_DELAY_MS = 6000" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.20 the second send is not ~6 s after the first"
+grep -q "shouldSend" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.20 the guard has no send decision"
+grep -q "maybeBufferingSkipAd" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.20 there is no buffering-skip hook"
+grep -q "bufferingSkipSecondSend" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.20 there is no delayed second send"
+grep -q "stopBufferingSkipSecondSend" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.20 the delayed second send is never stopped"
+buf_refresh_body=$(sed -n '/private void refreshCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$buf_refresh_body" | grep -q "maybeBufferingSkipAd" \
+  || fail_source "v48.20 the dongle strip does not skip on BUFFERING"
+buf_tv_paint_body=$(sed -n '/private void paintTvCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$buf_tv_paint_body" | grep -q "maybeBufferingSkipAd" \
+  || fail_source "v48.20 the TV strip does not skip on BUFFERING"
+buf_skip_body=$(sed -n '/private void maybeBufferingSkipAd/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$buf_skip_body" | grep -q 'castStripCommand("SKIP_AD")' \
+  || fail_source "v48.20 buffering-skip does not send SKIP_AD via castStripCommand"
+printf '%s' "$buf_skip_body" | grep -q "autoSkipAdsOn()" \
+  || fail_source "v48.20 buffering-skip does not check the switch"
+printf '%s' "$buf_skip_body" | grep -q "BUFFERING" \
+  || fail_source "v48.20 buffering-skip does not check for BUFFERING"
+printf '%s' "$buf_skip_body" | grep -q "bufferingSkipGuard.sends() == 1" \
+  || fail_source "v48.20 the second send is not scheduled only after the first"
+# v48.21: phone volume keys drive the TV volume on the main
+# remote screen only — 5 points per press, clamped 0–100, via
+# the same setVolumeTo the bottom slider uses (so the slider
+# paints and a selected Chromecast still gets Cast volume).
+# The keys are consumed (true) so the phone's own media
+# volume never moves too; Settings/setup keep normal keys;
+# the mute key is out of scope and must not be consumed.
+grep -q "VOLUME_KEY_STEP = 5" "$JAVA_DIR/VizioApi.java" \
+  || fail_source "v48.21 volume key step is not 5"
+grep -q "public static int stepVolume" "$JAVA_DIR/VizioApi.java" \
+  || fail_source "v48.21 there is no stepVolume"
+grep -q "onKeyDown" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.21 there is no onKeyDown"
+grep -q "KEYCODE_VOLUME_UP" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.21 volume up key is not handled"
+grep -q "KEYCODE_VOLUME_DOWN" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.21 volume down key is not handled"
+grep -q "KEYCODE_VOLUME_MUTE" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.21 mute key must stay out of scope"
+key_body=$(sed -n '/public boolean onKeyDown/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$key_body" | grep -q "remoteScroll.getVisibility() == View.VISIBLE" \
+  || fail_source "v48.21 volume keys are not remote-screen only"
+printf '%s' "$key_body" | grep -q "setVolumeTo" \
+  || fail_source "v48.21 volume keys do not reuse setVolumeTo"
+printf '%s' "$key_body" | grep -q "stepVolume" \
+  || fail_source "v48.21 volume keys do not use the step math"
+printf '%s' "$key_body" | grep -q "return true" \
+  || fail_source "v48.21 volume keys are not consumed"
+printf '%s' "$key_body" | grep -q "super.onKeyDown" \
+  || fail_source "v48.21 other keys do not fall through to super"
+# v48.22: Goodnight is a quiet utility, not a main control — the
+# black pill was overwhelming next to the TV pills (the user). Same
+# spot (header, left of the cog) and same behavior, but small
+# (11 sp) dimmed text on the header background: no heavy pill.
+gn_body=$(sed -n '/Button goodnightButton = new Button/,/header.addView(goodnightButton)/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$gn_body" | grep -q "goodnightButton.setTextSize(11)" \
+  || fail_source "v48.22 Goodnight is not small text"
+printf '%s' "$gn_body" | grep -q "goodnightButton.setTextColor(COL_MUTED)" \
+  || fail_source "v48.22 Goodnight is not dimmed text"
+printf '%s' "$gn_body" | grep -q "setBackgroundColor(Color.TRANSPARENT)" \
+  || fail_source "v48.22 Goodnight has no transparent background"
+printf '%s' "$gn_body" | grep -q "styledButton" \
+  && fail_source "v48.22 Goodnight still uses the heavy pill"
+printf '%s' "$gn_body" | grep -q "COL_SURFACE2" \
+  && fail_source "v48.22 Goodnight still uses the dark pill colour"
+printf '%s' "$gn_body" | grep -q 'setContentDescription("Goodnight' \
+  || fail_source "v48.22 Goodnight lost its content description"
+printf '%s' "$gn_body" | grep -q "Gravity.CENTER_VERTICAL" \
+  || fail_source "v48.22 Goodnight is not centred in the header"
+printf '%s' "$gn_body" | grep -q "applyPressAnimation(goodnightButton)" \
+  || fail_source "v48.22 Goodnight lost its pressed animation"
+# v48.23: CC toggle + sleep timer on the main screen — quiet
+# text controls under the volume row (11 sp dimmed text, no
+# pill), following the selected TV, driving the same Settings
+# code (setCcTo / setSleepTimerTo) so the two places agree.
+grep -q "public static int nextSleepTimerMinutes" "$JAVA_DIR/VizioApi.java" \
+  || fail_source "v48.23 there is no sleep cycle helper"
+grep -q "public static Boolean ccToggleTarget" "$JAVA_DIR/VizioApi.java" \
+  || fail_source "v48.23 there is no CC toggle helper"
+grep -q "mainCcButton" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.23 there is no main-screen CC control"
+grep -q "mainSleepButton" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.23 there is no main-screen sleep control"
+grep -q "updateMainCcSleepUi" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.23 there is no main-screen CC/sleep repaint"
+qt_body=$(sed -n '/private Button quietTextButton/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$qt_body" | grep -q "setTextSize(11)" \
+  || fail_source "v48.23 quiet text is not 11 sp"
+printf '%s' "$qt_body" | grep -q "setTextColor(COL_MUTED)" \
+  || fail_source "v48.23 quiet text is not dimmed"
+printf '%s' "$qt_body" | grep -q "setBackgroundColor(Color.TRANSPARENT)" \
+  || fail_source "v48.23 quiet text has no transparent background"
+cc_row=$(sed -n '/LinearLayout ccSleepRow = new LinearLayout/,/controlsLayout.addView(ccSleepRow)/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$cc_row" | grep -q "quietTextButton" \
+  || fail_source "v48.23 the main CC/sleep controls are not quiet text"
+printf '%s' "$cc_row" | grep -q "setCcTo" \
+  || fail_source "v48.23 the main CC control does not reuse setCcTo"
+printf '%s' "$cc_row" | grep -q "ccToggleTarget" \
+  || fail_source "v48.23 the main CC control does not use the toggle helper"
+printf '%s' "$cc_row" | grep -q "setSleepTimerTo" \
+  || fail_source "v48.23 the main sleep control does not reuse setSleepTimerTo"
+printf '%s' "$cc_row" | grep -q "nextSleepTimerMinutes" \
+  || fail_source "v48.23 the main sleep control does not use the cycle helper"
+printf '%s' "$cc_row" | grep -q "styledButton\|pillKeyButton" \
+  && fail_source "v48.23 the main CC/sleep controls use a heavy pill button"
+cc_ui=$(sed -n '/private void updateCcUi/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$cc_ui" | grep -q "updateMainCcSleepUi()" \
+  || fail_source "v48.23 updateCcUi does not repaint the main controls"
+sl_ui=$(sed -n '/private void updateSleepUi/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$sl_ui" | grep -q "updateMainCcSleepUi()" \
+  || fail_source "v48.23 updateSleepUi does not repaint the main controls"
+sel_body=$(sed -n '/private void selectTv/,/private void updateSelectorButtons/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$sel_body" | grep -q "updateMainCcSleepUi()" \
+  || fail_source "v48.23 selectTv does not repaint the main CC/sleep controls"
+printf '%s' "$sel_body" | grep -q "refreshCcState()" \
+  || fail_source "v48.23 selectTv does not read the CC state"
+printf '%s' "$sel_body" | grep -q "refreshSleepState()" \
+  || fail_source "v48.23 selectTv does not read the sleep state"
+# v48.24: the CC/Sleep row was half cut off at the bottom of the
+# test phone screen (measured ~12 px short with the strip open) — the
+# pad gives back 12 dp of headroom, its margins tighten 8 -> 4 dp,
+# and the four button-row gaps tighten 8 -> 6 dp: 28 dp of room in
+# the strip-open state. The CC/Sleep row itself is untouched, the
+# 40 dp swipe area is untouched, the pad never goes below 240 dp,
+# and there is still no ScrollView on the remote screen.
+grep -q "diameterPx - dp(12), dp(240)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the pad has no 12 dp headroom for the CC/Sleep row (or the 240 dp floor is gone)"
+grep -q "lp.topMargin = dp(4)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the pad top margin is not 4 dp"
+grep -q "lp.bottomMargin = dp(4)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the pad bottom margin is not 4 dp"
+grep -q "touchpadExpandPx = dp(40)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the 40 dp swipe area changed"
+grep -q "navRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the nav row gap is not 6 dp"
+grep -q "playbackRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the playback row gap is not 6 dp"
+grep -q "appRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the app row gap is not 6 dp"
+grep -q "volumeRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the volume row gap is not 6 dp"
+grep -q "ccSleepRow.setPadding(0, dp(8), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.24 the CC/Sleep row itself was moved or restyled"
+# v48.25: auto-select the TV that's on, at launch only. The rule
+# is pure (TvRegistry.autoSelectIndex, JVM-tested): exactly one TV
+# on picks that TV; both on, both off, or any state unknown keeps
+# the last-selected TV. The launch pass reads fresh power for
+# every paired TV (a failed read counts as unknown — the cached
+# value is never trusted), runs once (launchAutoSelectDone), and a
+# manual pill/list tap always wins (selectTvByUser marks it).
+grep -q "public static int autoSelectIndex" "$JAVA_DIR/TvRegistry.java" \
+  || fail_source "v48.25 TvRegistry has no autoSelectIndex rule"
+grep -q "private void autoSelectTvOnLaunch" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.25 MainActivity has no autoSelectTvOnLaunch pass"
+grep -q "autoSelectTvOnLaunch();" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.25 the launch pass is never called from onCreate"
+grep -q "launchAutoSelectDone" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.25 the launch-only gate is missing"
+grep -q "if (launchAutoSelectDone) return;" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.25 the launch pass does not stop after one attempt"
+grep -q "private void selectTvByUser" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.25 manual taps have no selectTvByUser wrapper"
+grep -q "selectTvByUser(index)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.25 no manual tap uses selectTvByUser"
+grep -q "if (userPickedTv || selectedIndex != launchSelected) return;" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.25 the launch pass can override a manual tap"
+grep -q "TvRegistry.autoSelectIndex(fresh, selectedIndex)" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.25 the launch pass does not apply the rule"
+# v48.26: home-screen widget (power + volume, no app open). The
+# provider is registered in the manifest with the APPWIDGET_UPDATE
+# filter and the @xml/tv_widget_info meta-data; the layout has the
+# room label, Power and Vol - / + buttons; the info has no
+# background poller (updatePeriodMillis 0); the app repaints the
+# widget whenever it writes state (saveCachedState hook); and no
+# network runs on the main thread — onUpdate/onReceive only paint
+# from cached prefs and kick a background thread, all Vizio calls
+# live in the worker methods.
+MANIFEST="$ROOT/app/src/main/AndroidManifest.xml"
+RES="$ROOT/app/src/main/res"
+grep -q "TvWidgetProvider" "$MANIFEST" \
+  || fail_source "v48.26 the widget provider is not in the manifest"
+grep -q "android.appwidget.action.APPWIDGET_UPDATE" "$MANIFEST" \
+  || fail_source "v48.26 the manifest has no APPWIDGET_UPDATE filter"
+grep -q "android.appwidget.provider" "$MANIFEST" \
+  || fail_source "v48.26 the manifest has no appwidget provider meta-data"
+grep -q "@xml/tv_widget_info" "$MANIFEST" \
+  || fail_source "v48.26 the manifest does not point at tv_widget_info"
+grep -q "android:label=\"Quiet Remote\"" "$MANIFEST" \
+  || fail_source "v48.26 the widget label is not the shipped app label"
+[ -f "$RES/layout/widget_tv.xml" ] \
+  || fail_source "v48.26 the widget layout is missing"
+# v48.28 DELIBERATE: the room label is gone — the widget is one
+# slim row now, no room name, no volume line.
+grep -q "widget_room" "$RES/layout/widget_tv.xml" \
+  && fail_source "v48.28 the widget layout still has a room label"
+grep -q "widget_power" "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.26 the widget layout has no Power button"
+grep -q "widget_vol_down" "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.26 the widget layout has no Vol - button"
+grep -q "widget_vol_up" "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.26 the widget layout has no Vol + button"
+[ -f "$RES/xml/tv_widget_info.xml" ] \
+  || fail_source "v48.26 the widget info XML is missing"
+grep -q "updatePeriodMillis=\"0\"" "$RES/xml/tv_widget_info.xml" \
+  || fail_source "v48.26 the widget has a background poller"
+grep -q "initialLayout=\"@layout/widget_tv\"" "$RES/xml/tv_widget_info.xml" \
+  || fail_source "v48.26 the widget info does not point at the layout"
+grep -q "extends AppWidgetProvider" "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.26 TvWidgetProvider is not an AppWidgetProvider"
+grep -q "TvWidgetProvider.updateAllWidgets(this);" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.26 the app does not repaint the widget on state writes"
+grep -q "FLAG_IMMUTABLE" "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.26 the widget PendingIntents are not immutable"
+grep -q "new Thread" "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.26 the widget has no background thread for network"
+grep -q "VizioApi\." < <(sed -n '/public void onUpdate/,/^    }/p' "$JAVA_DIR/TvWidgetProvider.java") \
+  && fail_source "v48.26 onUpdate does network on the main thread"
+grep -q "VizioApi\." < <(sed -n '/public void onReceive/,/^    }/p' "$JAVA_DIR/TvWidgetProvider.java") \
+  && fail_source "v48.26 onReceive does network on the main thread"
+grep -q "widgetPowerColor" "$JAVA_DIR/TvRegistry.java" \
+  || fail_source "v48.26 TvRegistry has no widgetPowerColor mapping"
+# v48.28 DELIBERATE: widgetVolumeLabel is gone with the volume
+# line — the single-row widget has no volume label to paint.
+grep -q "VOLUME_KEY_STEP" "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.26 the widget volume step is not the phone-key step"
+# v48.27: buffering auto-skip gets a third try — at most 3
+# SKIP_AD sends per buffering episode (once when first seen,
+# once ~6 s later, a third ~12 s after the episode started),
+# then never a fourth. Same delayed runnable carries the
+# third send; the 5 s poll stays the backstop. The v48.15
+# breakStatus auto-skip is untouched.
+grep -q "THIRD_SEND_DELAY_MS" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.27 there is no third-send delay"
+grep -q "THIRD_SEND_DELAY_MS = 12000" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.27 the third send is not ~12 s after the episode started"
+grep -q "sends = 3" "$JAVA_DIR/CastMedia.java" \
+  || fail_source "v48.27 the guard never counts a third send"
+buf_skip_body27=$(sed -n '/private void maybeBufferingSkipAd/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$buf_skip_body27" | grep -q "bufferingSkipGuard.sends() == 2" \
+  || fail_source "v48.27 the third send is not scheduled only after the second"
+printf '%s' "$buf_skip_body27" | grep -q "THIRD_SEND_DELAY_MS" \
+  || fail_source "v48.27 the third send does not use the third-send delay"
+printf '%s' "$buf_skip_body27" | grep -q "bufferingSkipGuard.sends() == 1" \
+  || fail_source "v48.27 the second send is no longer scheduled only after the first"
+# v48.28: slim single-row widget — one horizontal row (Power +
+# Vol - / +), no room label, no volume line; light silver
+# background like the app instead of dark; about half the height
+# (minHeight 110 -> 56 dp); tapping the background opens the app;
+# with nothing paired the Power button reads "No TV yet".
+# The v48.26 checks above still apply (provider registered,
+# no poller, immutable PendingIntents, background thread, app
+# repaints the widget on state writes) except the two noted
+# as deliberate above.
+# v48.32 DELIBERATE: the single horizontal row is gone — the
+# widget is TWO rows now (root vertical, row 1 Power + Vol,
+# row 2 Skip Ad), minHeight back to 110 dp, buttons fill the
+# height instead of a fixed 40 dp. See the v48.32 block below.
+grep -q 'android:orientation="vertical"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.32 the widget root is not the two-row vertical layout"
+grep -q 'android:id="@+id/widget_row1"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.32 the widget has no row 1"
+grep -q "widget_volume" "$RES/layout/widget_tv.xml" \
+  && fail_source "v48.28 the widget layout still has a volume line"
+grep -q "widget_room" "$JAVA_DIR/TvWidgetProvider.java" \
+  && fail_source "v48.28 the provider still paints a room label"
+grep -q "widgetVolumeLabel" "$JAVA_DIR/TvWidgetProvider.java" \
+  && fail_source "v48.28 the provider still paints a volume label"
+grep -q "#E7E7EA" "$RES/drawable/widget_bg.xml" \
+  || fail_source "v48.28 the widget background is not the app's light silver"
+grep -q "#1C1C1E" "$RES/drawable/widget_bg.xml" \
+  && fail_source "v48.28 the widget background is still dark"
+# v48.32 DELIBERATE: minHeight is 110 dp again (two rows use
+# the space now); the 56 dp check lives in the v48.32 block.
+grep -q 'android:minHeight="110dp"' "$RES/xml/tv_widget_info.xml" \
+  || fail_source "v48.32 the widget info does not fit two rows"
+grep -q 'setOnClickPendingIntent(R.id.widget_root, openAppIntent(context))' "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.28 tapping the widget background does not open the app"
+grep -q '"No TV yet"' "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.28 the widget has no compact nothing-paired state"
+# v48.32 DELIBERATE: no fixed 40 dp buttons any more — the
+# buttons fill the widget height (match_parent in row 1,
+# 0 dp + weight in row 2); see the v48.32 block below.
+grep -q 'android:layout_height="40dp"' "$RES/layout/widget_tv.xml" \
+  && fail_source "v48.32 the widget still has fixed-height buttons leaving dead space"
+# v48.29: the widget Power button reads the selected TV's room
+# name instead of the word "Power" (the user: need to know which TV
+# the widget controls) — same button, same toggle, same
+# green/red/grey, "No TV yet" when nothing is paired. The room
+# name stays mixed case (Buttons default to ALL CAPS) and
+# single-line with end ellipsize so a long room name can never
+# wrap or clip. (v48.32: the slim 56 dp single row is gone —
+# two rows now, minHeight back to 110 dp; see the v48.32 block.)
+grep -q "widgetPowerLabel" "$JAVA_DIR/TvRegistry.java" \
+  || fail_source "v48.29 TvRegistry has no widget power label"
+grep -q "TvRegistry.widgetPowerLabel(tv)" "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.29 the widget Power button does not read the room name"
+grep -q '"No TV yet" : "Power"' "$JAVA_DIR/TvWidgetProvider.java" \
+  && fail_source "v48.29 the widget Power button still reads the word Power"
+grep -q 'android:textAllCaps="false"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.29 the room name would render ALL CAPS"
+grep -q 'android:ellipsize="end"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.29 a long room name can wrap or clip"
+grep -q 'android:minHeight="110dp"' "$RES/xml/tv_widget_info.xml" \
+  || fail_source "v48.32 the widget info does not fit two rows"
+# v48.31: a Skip Ad button on the widget (Power [TV name] +
+# Vol - / + in row 1, Skip Ad full-width in row 2 since
+# v48.32), same light-silver background, no poller. Tapping it sends
+# one SKIP_AD to the SELECTED TV's built-in Cast receiver via
+# the same CastVolume.Client.mediaCommand path the strip's
+# Skip Ad button uses — no status check first (the receiver
+# ignores SKIP_AD when no skippable ad is playing), on the
+# background thread onReceive starts, failing quietly when
+# the TV is not reachable or not casting. No auto-skip on the
+# widget (that only runs while the strip is open), no dongle
+# state — the widget drives the selected TV only.
+grep -q "widget_skip_ad" "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.31 the widget layout has no Skip Ad button"
+grep -q 'android:text="Skip Ad"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.31 the widget Skip Ad button has no label"
+grep -q 'android:layout_height="match_parent"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.32 the widget row buttons do not fill the widget height"
+grep -q "ACTION_WIDGET_SKIP_AD" "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.31 the widget has no Skip Ad action"
+grep -q "WidgetSkipAd.ACTION_SKIP_AD" "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.31 the widget Skip Ad action is not the tested constant"
+grep -q 'setOnClickPendingIntent(R.id.widget_skip_ad' "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.31 the widget Skip Ad button has no tap handler"
+grep -q "doSkipAd" "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.31 the widget has no Skip Ad send"
+skip_ad_body=$(sed -n '/static void doSkipAd/,/^    }/p' "$JAVA_DIR/TvWidgetProvider.java")
+printf '%s' "$skip_ad_body" | grep -q "CastVolume.Client" \
+  || fail_source "v48.31 the widget Skip Ad does not use the Cast client"
+printf '%s' "$skip_ad_body" | grep -q "mediaCommand" \
+  || fail_source "v48.31 the widget Skip Ad does not use the Cast media command path"
+printf '%s' "$skip_ad_body" | grep -q "WidgetSkipAd.COMMAND_TYPE" \
+  || fail_source "v48.31 the widget Skip Ad does not send the tested SKIP_AD type"
+printf '%s' "$skip_ad_body" | grep -q "getCastStatus" \
+  && fail_source "v48.31 the widget Skip Ad checks status before sending"
+printf '%s' "$skip_ad_body" | grep -q "getVolume\\|getPowerMode" \
+  && fail_source "v48.31 the widget Skip Ad reads TV state before sending"
+grep -q "CastDevice\\|selectedCast" "$JAVA_DIR/TvWidgetProvider.java" \
+  && fail_source "v48.31 the widget reaches for the Chromecast dongle"
+recv_body31=$(sed -n '/public void onReceive/,/^    }/p' "$JAVA_DIR/TvWidgetProvider.java")
+printf '%s' "$recv_body31" | grep -q "ACTION_WIDGET_SKIP_AD" \
+  || fail_source "v48.31 onReceive does not route the Skip Ad tap"
+printf '%s' "$recv_body31" | grep -q "runBg" \
+  || fail_source "v48.31 the Skip Ad tap does not run on a background thread"
+grep -q 'android:minHeight="110dp"' "$RES/xml/tv_widget_info.xml" \
+  || fail_source "v48.32 the widget info does not fit two rows"
+grep -q 'updatePeriodMillis="0"' "$RES/xml/tv_widget_info.xml" \
+  || fail_source "v48.31 the widget gained a background poller"
+grep -q "#E7E7EA" "$RES/drawable/widget_bg.xml" \
+  || fail_source "v48.31 the widget background is not the app's light silver"
+grep -q "WidgetSkipAd" "$ROOT/test/run-test.sh" \
+  || fail_source "v48.31 the Skip Ad wiring test is not in the test run"
+# v48.32: TWO-ROW widget (the user, 2026-11-24: use the space wisely
+# at 4x1 — the single-row 40 dp buttons sat pinned to the top
+# with the bottom half of the widget empty silver). Row 1:
+# Power [TV name] + Vol - / + spread by weight (Power 3,
+# Vol - / + 1 each). Row 2: a LARGE Skip Ad button by itself,
+# full width. Both rows fill the widget height (0 dp + weight)
+# with no dead space; minHeight is back to 110 dp because the
+# space is now used. All four buttons share the same pill
+# shape and radius: the Power button gets its state colour
+# from a pill drawable (a flat setBackgroundColor painted a
+# rectangle), Vol - / + / Skip Ad use the white pill drawable.
+row1_body=$(sed -n '/android:id="@+id\/widget_row1"/,/^    <\/LinearLayout>/p' "$RES/layout/widget_tv.xml")
+printf '%s' "$row1_body" | grep -q 'android:orientation="horizontal"' \
+  || fail_source "v48.32 row 1 is not a horizontal row"
+printf '%s' "$row1_body" | grep -q 'android:layout_height="0dp"' \
+  || fail_source "v48.32 row 1 does not fill the widget height"
+printf '%s' "$row1_body" | grep -q 'android:layout_weight="1"' \
+  || fail_source "v48.32 row 1 does not share the widget height"
+printf '%s' "$row1_body" | grep -q 'android:layout_weight="3"' \
+  || fail_source "v48.32 the Power button is not the widest in row 1"
+grep -q 'android:id="@+id/widget_skip_ad"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.32 the widget has no Skip Ad button in row 2"
+skip_body=$(sed -n '/android:id="@+id\/widget_skip_ad"/,/singleLine/p' "$RES/layout/widget_tv.xml")
+printf '%s' "$skip_body" | grep -q 'android:layout_width="match_parent"' \
+  || fail_source "v48.32 the Skip Ad button is not full width"
+printf '%s' "$skip_body" | grep -q 'android:layout_height="0dp"' \
+  || fail_source "v48.32 the Skip Ad button does not fill its row height"
+printf '%s' "$skip_body" | grep -q 'android:layout_weight="1"' \
+  || fail_source "v48.32 the Skip Ad row does not share the widget height"
+printf '%s' "$skip_body" | grep -q 'android:layout_marginTop="8dp"' \
+  || fail_source "v48.32 the Skip Ad row has no even gap from row 1"
+grep -q 'android:layout_height="40dp"' "$RES/layout/widget_tv.xml" \
+  && fail_source "v48.32 the widget still has fixed-height buttons leaving dead space"
+for d in widget_power_on widget_power_off widget_power_unknown widget_btn_light; do
+  [ -f "$RES/drawable/$d.xml" ] \
+    || fail_source "v48.32 the $d pill drawable is missing"
+done
+grep -q 'android:radius="48dp"' "$RES/drawable/widget_power_on.xml" \
+  || fail_source "v48.32 the Power pill is not the shared pill shape"
+grep -q 'android:radius="48dp"' "$RES/drawable/widget_btn_light.xml" \
+  || fail_source "v48.32 the light buttons are not the shared pill shape"
+grep -q '#81C784' "$RES/drawable/widget_power_on.xml" \
+  || fail_source "v48.32 the Power-on pill is not the app's green"
+grep -q '#E57373' "$RES/drawable/widget_power_off.xml" \
+  || fail_source "v48.32 the Power-off pill is not the app's red"
+grep -q '#8E8E93' "$RES/drawable/widget_power_unknown.xml" \
+  || fail_source "v48.32 the Power-unknown pill is not the app's grey"
+grep -q '#FFFFFF' "$RES/drawable/widget_btn_light.xml" \
+  || fail_source "v48.32 the light pill buttons are not white"
+grep -q 'widgetPowerBackground' "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.32 the provider has no pill-background mapping"
+grep -q '"setBackgroundResource"' "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.32 the provider still paints the Power button flat"
+# (scoped to the buildViews body: the word setBackgroundColor
+# still appears in the v48.32 comments explaining the change)
+views_body32=$(sed -n '/private static RemoteViews buildViews/,/^    }/p' "$JAVA_DIR/TvWidgetProvider.java")
+printf '%s' "$views_body32" | grep -q 'setBackgroundColor' \
+  && fail_source "v48.32 the provider still uses a flat background color"
+grep -q 'android:background="@drawable/widget_btn_light"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.32 the Vol/Skip buttons do not use the shared pill"
+grep -q 'android:gravity="center_vertical"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.32 row 1 is not vertically centred"
+grep -q 'android:minHeight="110dp"' "$RES/xml/tv_widget_info.xml" \
+  || fail_source "v48.32 the widget info does not fit two rows"
+# v48.33: a Q button opens the app (the user, 2026-11-24: "Can't
+# click on widget to open remote"). The root tap was still
+# wired, but v48.32's two rows fill the whole widget, so the
+# only exposed root background left was the 8 dp padding
+# frame — every other tap hit a button. Row 1 now starts
+# with a small Q button (the app icon, @mipmap/ic_launcher)
+# that opens the app via the same openAppIntent as the root
+# tap; the root tap stays wired too. Row 1 is [Q] [Power TV
+# name] [Vol -] [Vol +] (Q weight 1, Power still widest at
+# 3, each Vol 1). Row 2 (large full-width Skip Ad) and the
+# 110 dp height are untouched.
+grep -q 'android:id="@+id/widget_open_app"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.33 the widget has no Q button to open the app"
+open_body=$(sed -n '/android:id="@+id\/widget_open_app"/,/\/>/p' "$RES/layout/widget_tv.xml")
+# v48.34 DELIBERATE: the app icon is gone from the button — the user
+# (2026-11-24) said the pasted icon looked stuck on and approved
+# a hand-drawn magnifying glass instead; the src check below now
+# asserts the new vector drawable, not @mipmap/ic_launcher.
+printf '%s' "$open_body" | grep -q 'android:src="@drawable/widget_open_app"' \
+  || fail_source "v48.34 the open-app button does not use the magnifying glass drawable"
+printf '%s' "$open_body" | grep -q 'android:layout_weight="1"' \
+  || fail_source "v48.33 the Q button is not the small button in row 1"
+printf '%s' "$row1_body" | grep -q 'widget_open_app' \
+  || fail_source "v48.33 the Q button is not in row 1"
+[ "$(grep -n 'widget_open_app' "$RES/layout/widget_tv.xml" | head -1 | cut -d: -f1)" -lt "$(grep -n 'android:id="@+id/widget_power"' "$RES/layout/widget_tv.xml" | head -1 | cut -d: -f1)" ] \
+  || fail_source "v48.33 the Q button is not first in row 1"
+printf '%s' "$row1_body" | grep -q 'android:layout_weight="3"' \
+  || fail_source "v48.33 the Power button is no longer the widest in row 1"
+grep -q 'setOnClickPendingIntent(R.id.widget_open_app, openAppIntent(context))' "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.33 the Q button is not wired to open the app"
+grep -q 'setOnClickPendingIntent(R.id.widget_root, openAppIntent(context))' "$JAVA_DIR/TvWidgetProvider.java" \
+  || fail_source "v48.33 the widget background tap no longer opens the app"
+grep -q 'android:id="@+id/widget_skip_ad"' "$RES/layout/widget_tv.xml" \
+  || fail_source "v48.33 the Skip Ad button in row 2 is gone"
+grep -q 'android:minHeight="110dp"' "$RES/xml/tv_widget_info.xml" \
+  || fail_source "v48.33 the widget info does not fit two rows"
+# v48.34: the open-app button is a magnifying glass (the user,
+# 2026-11-24: "Make q look as magnifying glass", approved from
+# the mockup). The v48.33 button used the whole app icon
+# (@mipmap/ic_launcher — the Q on its silver rounded square)
+# pasted on the white pill, which looked stuck on. The new mark
+# is a hand-drawn vector drawable (@drawable/widget_open_app):
+# an open ring (outline circle, dark #1C1C1E, NOT a solid disc)
+# with a handle at the bottom right — 64 viewBox, ring centred
+# (26,26) radius 17 with a 6 stroke, handle from (39,39) to
+# (55,55) with a 6 stroke and round cap. Same button, same spot
+# (first in row 1), same size, same openAppIntent wiring.
+[ -f "$RES/drawable/widget_open_app.xml" ] \
+  || fail_source "v48.34 the magnifying glass drawable is missing"
+grep -q '<vector' "$RES/drawable/widget_open_app.xml" \
+  || fail_source "v48.34 the open-app mark is not a vector drawable"
+grep -q 'android:viewportWidth="64"' "$RES/drawable/widget_open_app.xml" \
+  || fail_source "v48.34 the magnifying glass viewport is not 64"
+grep -q 'android:viewportHeight="64"' "$RES/drawable/widget_open_app.xml" \
+  || fail_source "v48.34 the magnifying glass viewport is not 64"
+grep -q 'A 17 17' "$RES/drawable/widget_open_app.xml" \
+  || fail_source "v48.34 the magnifying glass has no ring (17 radius arcs)"
+grep -q 'M 39 39 L 55 55' "$RES/drawable/widget_open_app.xml" \
+  || fail_source "v48.34 the magnifying glass has no handle"
+grep -q 'android:strokeColor="#1C1C1E"' "$RES/drawable/widget_open_app.xml" \
+  || fail_source "v48.34 the magnifying glass is not dark on the white pill"
+grep -q 'android:strokeWidth="6"' "$RES/drawable/widget_open_app.xml" \
+  || fail_source "v48.34 the magnifying glass stroke is not 6"
+grep -q 'android:strokeLineCap="round"' "$RES/drawable/widget_open_app.xml" \
+  || fail_source "v48.34 the magnifying glass handle has no round cap"
+grep -q 'android:fillColor' "$RES/drawable/widget_open_app.xml" \
+  && fail_source "v48.34 the magnifying glass ring is filled — it must be an outline, not a solid disc"
+printf '%s' "$open_body" | grep -q '@mipmap/ic_launcher' \
+  && fail_source "v48.34 the open-app button still uses the pasted app icon"
+echo "PASS: v29 room pills never wrap (single-line + END ellipsize, long names step down to 11 sp since v48.9, measured sizes) + E50 name fix (Display Name fallback, scan renames model-only paired TVs) + header scrolls sideways for 4–5 TVs (96 dp min, cog/power fixed) + away TVs dim (tappable, says so) + v28 kept + v31 double-tap Select + v32 buttons at the bottom + v33 bigger swipe area, same look + v34 Refresh lists found TVs in Settings + v35 pad down in the thumb zone + v36 whole area above the buttons swipes + double-taps + v37 a TV can be removed from the top list + v38 KB is a drawn keyboard icon + v39 Settings footer reads the real version + v40 power button is green on, red off + v41 both buttons are soft 3D and the hint fits inside the centre + v42 YouTube and Netflix match the user's logos + v43 keyboard pops up by itself, Select not OK, Send leaves the dialog open + v44 keyboard hint corrected (Select presses the highlighted key, highlight SEARCH to run the search) + v45 keyboard dialog has a Search button (Enter, CODE 13 live test) + v46 power button turns green fast on launch (last-known power restored, early refresh in parallel with the scan) + v47 keyboard hint corrected (Send runs the search by itself in YouTube, Search presses Enter, kept for other apps) + v47.2 power button flips at once on a toggle and re-reads at 5 s + v48 Chromecasts discovered by mDNS, minimal control (strip only since v48.7), no Play Services, no hardcoded devices + v48.1 a TV's built-in Cast is filtered out (TXT md + known TV IP), real Chromecasts still list + v48.2 discovery runs continuously with no 6-second stop, found Chromecasts persist as last-seen, and they list on the remote screen below the TV pills + v48.3 Cast diagnostics in Settings listed every Cast service before filtering, with the filter verdict, and a failed discovery retries on resume/Refresh — removed in v48.30, the filter verdict and the retry stay + v48.4 Cast resolves run one at a time from a queue with a fresh listener per attempt, and a failed or timed-out resolve retries up to 3 times + v48.5 the strip re-reads status 1 s after a Play/Pause/Stop command, polls every 5 s while open, and a failed re-read keeps the last good status + v48.6 the remote screen has an inline Chromecast strip: tap the button to select it (dark like a selected TV pill) and the strip appears under the row with what's playing, Play/Pause and Stop — tap again to hide it; the Settings list returns to the remote with the strip open and TV-pill selection is untouched + v48.7 the separate Chromecast control view is gone (the strip is the only control), the strip's unreachable line is short with no Refresh instruction, the Chromecast pill is the same size as the TV pills with a hand-drawn Cast icon, the TV pills carry a hand-drawn TV icon, the remote row has no redundant Chromecast: label, and the strip has no volume slider (the TV slider handles volume) + v48.8 the Chromecast row sits close under the TV pills (2 dp top padding) + v48.9 the bottom slider drives the Chromecast while one is selected (and the TV again on deselect), long pill names step to 11 sp with 12 dp icons so Bedroom Twelve fits, the pad shrinks by the strip's height while the strip is open so nothing is cut off at the bottom, and cast mode dims + disables the TV controls while a Chromecast is selected (tapping a TV pill leaves cast mode) + v48.10 casting to a TV shows the same strip under the pill row only while the session is active (the pill swaps to the Cast icon, TV controls stay live, the filter still keeps TVs out of the Chromecast list) + v48.11 TV-cast re-detection after lock/unlock is one poll tick: a dead socket after sleep is retried once on a fresh connection, a failed read keeps the last known session instead of wiping it, the poll always re-posts while the remote is on, the TV strip never paints the slider from the receiver volume, and the volume thumb has room at both ends + v48.12 with a Chromecast selected, a pad double-tap skips the ad on the dongle (SKIP_AD, same media message as Play/Pause/Stop), swipes stay dead, the pad stays enabled but dimmed with a hint that says so, and casting to a TV still double-taps Select + v48.13 the hint is full brightness in every mode: only the disc is dimmed in cast mode, the pad container is not, and the fade after first use is gone entirely + v48.14 the strip has a Skip Ad button after Stop, same style and size, sending SKIP_AD via castStripCommand in both the dongle and TV strips, one row fits on the test phone + v48.15 while the strip is open, a skippable ad is skipped by itself, once per break clip (breakStatus parses from MEDIA_STATUS, Settings switch defaults ON, Skip Ad button and double-tap untouched) + v48.16 the strip line counts down a cast ad break (\"Skippable in Ns\", then \"Skippable now\"), repainted every 1 s from the last poll while the strip is open, in both the dongle and TV strips, and the ticker never sends anything + v48.17 Settings showed the last cast MEDIA_STATUS for the dongle and TV strips — removed in v48.30 + v48.18 Settings kept the last 3 distinct cast statuses, newest first — removed in v48.30 + v48.19 a Goodnight button in the header turns off every TV that is on (toggle only when power is known on — off and unknown are never toggled, so Goodnight cannot switch a TV on), with a per-TV status line and the same optimistic flip + 1.5 s / 5 s re-reads as a power toggle + v48.20 while the strip is open, a BUFFERING cast status sends SKIP_AD by itself, at most twice per buffering episode (once when first seen, once ~6 s later), gated by the Auto-skip switch, with the v48.15 breakStatus auto-skip untouched + v48.21 phone volume keys drive the TV volume on the remote screen only (5 per press, clamped 0-100, same setVolumeTo as the slider so the Cast branch still applies, keys consumed so the phone's own volume never moves, mute key out of scope) + v48.22 Goodnight is quiet now — same spot and same behavior, but small (11 sp) dimmed text on the header background, no heavy black pill + v48.23 CC toggle + sleep timer on the main screen (quiet text controls under the volume row, same setCcTo/setSleepTimerTo as Settings, sleep cycles Off → 30 → 60 → 90 → 120 → Off) + v48.24 the CC/Sleep row is no longer cut off at the bottom: the pad gives back 12 dp of headroom (336 -> 324 dp full, 243 dp with the strip open, still above the 240 dp minimum), its margins tighten 8 -> 4 dp, and the nav/playback/app/volume row gaps tighten 8 -> 6 dp — 28 dp of room in the strip-open state, CC/Sleep row itself untouched, 40 dp swipe area untouched, still no ScrollView + v48.25 the app opens on the TV that's on: a launch-only pass reads fresh power for every paired TV and picks the one TV that is on (exactly one on; both on, both off, or any state unknown keeps the last-selected TV), a failed read counts as unknown so a stale cache never picks the wrong TV, and a manual pill tap always wins + v48.26 a home-screen widget controls the selected TV without opening the app (room name, Power with the same green/red/grey as the app, Vol - / + at the same 5-per-tap step, tap the room to open the app), network only on a background thread, no poller, and the app repaints the widget whenever it writes state + v48.27 buffering auto-skip gets a third try: at most 3 SKIP_AD sends per buffering episode (first, ~6 s later, ~12 s after the episode started), the same delayed runnable carries the third send, no fourth send ever, breakStatus auto-skip untouched + v48.28 the widget is a slim single row: Power + Vol - / + only, no room label or volume line, light silver like the app instead of dark, about half the height (minHeight 110 -> 56 dp), tapping the background opens the app, and with nothing paired the Power button reads 'No TV yet' + v48.29 the widget Power button reads the selected TV's room name instead of 'Power' (same button, same toggle, same green/red/grey, same slim 56 dp row, mixed case not ALL CAPS, long names ellipsize, 'No TV yet' when nothing is paired) + v48.30 the Cast diagnostics are gone from Settings (the v48.3 service list and the v48.17/v48.18 last-status history, with their recording code) — the filter verdict, the Auto-skip ads switch, auto-skip, the countdown, and the strip are all untouched + v48.31 the widget has a Skip Ad button in the same slim 56 dp single row, sending SKIP_AD to the selected TV's built-in Cast receiver on a background thread with no status check and no poller, failing quietly when nothing is casting, no dongle + v48.32 the widget is two rows now (the user: use the space wisely at 4x1 — the single-row buttons sat pinned to the top with the bottom half empty, so the single-row redesign was dropped before shipping): row 1 Power [TV name] + Vol - / + by weight, row 2 a large full-width Skip Ad, both rows filling the widget height with no dead space, minHeight back to 110 dp because the space is used now, and all four buttons share the same pill shape (Power state colour from a pill drawable, Vol/Skip white pills) + v48.33 the widget has a Q button at the start of row 1 that opens the app (the two rows filled the whole widget so the background tap was nearly unreachable — only the 8 dp padding frame was exposed root); the Q button uses the app icon and the same openAppIntent as the root tap, row 1 is Q + Power [TV name] + Vol - / + with Power still widest,  + v48.34 the widget open-app button is a hand-drawn magnifying glass (open ring + handle, dark on the white pill) instead of the pasted app icon — same button, same spot first in row 1, same size, same openAppIntent wiring, row 2 Skip Ad and the 110 dp height untouched"

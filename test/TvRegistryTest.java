@@ -2,6 +2,7 @@ import com.tom.tvremote.ScanLogic;
 import com.tom.tvremote.ScanLogic.TvDevice;
 import com.tom.tvremote.TvRegistry;
 import com.tom.tvremote.TvRegistry.TvInfo;
+import com.tom.tvremote.VizioApi;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -249,6 +250,82 @@ public class TvRegistryTest {
         check("v28 2nd-TV shape: encode/decode round-trips the lastIp",
                 TvRegistry.decode(TvRegistry.encode(
                         java.util.Arrays.asList(secondTv))).get(0).lastIp.equals("192.168.1.61"));
+
+        // v48.19: Goodnight targets — only a TV whose last-known
+        // power is 1 (on) gets a toggle. Off (0) and unknown (-1)
+        // are never toggled, or Goodnight would switch a TV ON.
+        check("v48.19 goodnight: both on -> both toggled",
+                TvRegistry.goodnightTargets(new int[]{1, 1}).equals(
+                        java.util.Arrays.asList(0, 1)));
+        check("v48.19 goodnight: first on, second off -> only first",
+                TvRegistry.goodnightTargets(new int[]{1, 0}).equals(
+                        java.util.Arrays.asList(0)));
+        check("v48.19 goodnight: first off, second on -> only second",
+                TvRegistry.goodnightTargets(new int[]{0, 1}).equals(
+                        java.util.Arrays.asList(1)));
+        check("v48.19 goodnight: unknown power is skipped, never toggled",
+                TvRegistry.goodnightTargets(new int[]{-1, 1, -1}).equals(
+                        java.util.Arrays.asList(1)));
+        check("v48.19 goodnight: all off -> nothing sent",
+                TvRegistry.goodnightTargets(new int[]{0, 0}).isEmpty());
+        check("v48.19 goodnight: all unknown -> nothing sent",
+                TvRegistry.goodnightTargets(new int[]{-1, -1}).isEmpty());
+        check("v48.19 goodnight: no TVs -> nothing sent",
+                TvRegistry.goodnightTargets(new int[]{}).isEmpty());
+        check("v48.19 goodnight: null input -> nothing sent, no crash",
+                TvRegistry.goodnightTargets(null).isEmpty());
+
+        // v48.25: auto-select the TV that's on, at launch only —
+        // exactly one TV on picks that TV; anything else keeps
+        // the last-selected TV (the existing default).
+        check("v48.25 autoselect: second on, first off -> second",
+                TvRegistry.autoSelectIndex(new int[]{0, 1}, 0) == 1);
+        check("v48.25 autoselect: first on, second off -> first",
+                TvRegistry.autoSelectIndex(new int[]{1, 0}, 1) == 0);
+        check("v48.25 autoselect: both on -> last-selected kept",
+                TvRegistry.autoSelectIndex(new int[]{1, 1}, 0) == 0);
+        check("v48.25 autoselect: both off -> last-selected kept",
+                TvRegistry.autoSelectIndex(new int[]{0, 0}, 1) == 1);
+        check("v48.25 autoselect: one on, one unknown -> last-selected kept",
+                TvRegistry.autoSelectIndex(new int[]{1, -1}, 0) == 0);
+        check("v48.25 autoselect: all unknown -> last-selected kept",
+                TvRegistry.autoSelectIndex(new int[]{-1, -1}, 1) == 1);
+        check("v48.25 autoselect: three TVs, middle on -> middle",
+                TvRegistry.autoSelectIndex(new int[]{0, 1, 0}, 0) == 1);
+        check("v48.25 autoselect: single TV on -> it",
+                TvRegistry.autoSelectIndex(new int[]{1}, -1) == 0);
+        check("v48.25 autoselect: single TV off -> last-selected kept",
+                TvRegistry.autoSelectIndex(new int[]{0}, 0) == 0);
+        check("v48.25 autoselect: no TVs -> nothing, no crash",
+                TvRegistry.autoSelectIndex(new int[]{}, -1) == -1);
+        check("v48.25 autoselect: null input -> nothing, no crash",
+                TvRegistry.autoSelectIndex(null, 1) == 1);
+
+        check("v48.26 widget power colour: on -> soft green",
+                TvRegistry.widgetPowerColor(1) == 0xFF81C784);
+        check("v48.26 widget power colour: off -> soft red",
+                TvRegistry.widgetPowerColor(0) == 0xFFE57373);
+        check("v48.26 widget power colour: unknown -> grey",
+                TvRegistry.widgetPowerColor(-1) == 0xFF8E8E93);
+        check("v48.26 widget power colour: out-of-range -> grey",
+                TvRegistry.widgetPowerColor(2) == 0xFF8E8E93);
+        check("v48.26 widget volume step reuses the phone-key step",
+                VizioApi.stepVolume(25, VizioApi.VOLUME_KEY_STEP) == 30
+                && VizioApi.stepVolume(25, -VizioApi.VOLUME_KEY_STEP) == 20
+                && VizioApi.stepVolume(98, VizioApi.VOLUME_KEY_STEP) == 100
+                && VizioApi.stepVolume(2, -VizioApi.VOLUME_KEY_STEP) == 0);
+        check("v48.29 widget power label: no TV paired -> 'No TV yet'",
+                "No TV yet".equals(TvRegistry.widgetPowerLabel(null)));
+        check("v48.29 widget power label: selected TV -> its room name",
+                "Bedroom Twelve".equals(TvRegistry.widgetPowerLabel(
+                        new TvInfo("tv-1", "Bedroom Twelve", null, null))));
+        check("v48.29 widget power label: unnamed TV -> 'TV'",
+                "TV".equals(TvRegistry.widgetPowerLabel(
+                        new TvInfo("tv-2", null, null, null))));
+        TvInfo blankRoom = new TvInfo("tv-3", "Kitchen", null, null);
+        blankRoom.room = "";
+        check("v48.29 widget power label: blank room -> 'TV'",
+                "TV".equals(TvRegistry.widgetPowerLabel(blankRoom)));
 
         System.out.println("TvRegistryTest: " + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);

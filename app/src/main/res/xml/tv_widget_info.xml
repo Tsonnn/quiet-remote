@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v48.32: TWO-ROW widget — minHeight back to 110 dp
+     (the v48.26 height). The slim 56 dp single row left the
+     bottom half of the widget empty at 4x1; the space is now
+     used by two rows, so the height returns. minWidth stays
+     180 dp. updatePeriodMillis is 0 — there is no background
+     poller; the widget repaints on tap, when the app writes
+     state, and when the system asks. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_tv"
+    android:resizeMode="horizontal"
+    android:widgetCategory="home_screen"
+    android:previewImage="@mipmap/ic_launcher" />

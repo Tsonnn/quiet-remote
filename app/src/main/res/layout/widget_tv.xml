@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v48.34: the open-app button is a magnifying glass now (the user,
+     2026-11-24: "Make q look as magnifying glass", approved from
+     the mockup). The v48.33 button used the whole app icon
+     (@mipmap/ic_launcher) pasted on the white pill, which looked
+     stuck on — the new mark is a hand-drawn vector drawable
+     (@drawable/widget_open_app): an open ring with a handle,
+     drawn dark straight onto the white pill.
+     v48.33: a Q button opens the app (the user, 2026-11-24: "Can't
+     click on widget to open remote"). The root tap was still
+     wired, but v48.32's two rows fill the whole widget, so the
+     only exposed root background left was the 8 dp padding
+     frame — every other tap hit a button. Row 1 now starts
+     with a small Q button (the app icon) that opens the app
+     via the same openAppIntent as the root tap; the root tap
+     stays wired too. Row 1 is [Q] [Power TV name] [Vol -]
+     [Vol +] (Q weight 1, Power still widest at 3).
+     v48.32: TWO-ROW widget (the user: use the space wisely at 4x1
+     — the single-row buttons sat pinned to the top with the
+     bottom half of the widget empty silver, so the single-row
+     redesign was dropped before shipping).
+     Row 1: Power [TV name] + Vol - / +, spread by weight
+     (Power 3, Vol - / + 1 each) with even 8 dp gaps.
+     Row 2: a LARGE Skip Ad button by itself, full width.
+     Both rows fill the widget height (0 dp + weight 1 each)
+     with no dead space anywhere; minHeight is back to
+     ~110 dp (v48.26 height) because the space is now used,
+     not empty. All buttons share the same pill shape and
+     48 dp radius: the Power button gets its state colour
+     from a pill drawable (a flat setBackgroundColor painted
+     a rectangle, which is why it looked different), and
+     Vol - / + / Skip Ad use the white pill drawable.
+     The background is the app's light silver; tapping
+     anywhere on it opens the app. Skip Ad sends SKIP_AD
+     to the selected TV's built-in Cast receiver; the
+     receiver ignores it when no skippable ad is playing.
+     v48.29: the Power button reads the selected TV's room
+     name (TvWidgetProvider sets it at runtime) instead of
+     "Power". textAllCaps is off so "Bedroom Twelve" stays
+     mixed case, and the name is single-line with end
+     ellipsize so a long room name can never wrap or clip. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="8dp">
+
+    <LinearLayout
+        android:id="@+id/widget_row1"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageButton
+            android:id="@+id/widget_open_app"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/widget_btn_light"
+            android:src="@drawable/widget_open_app"
+            android:padding="6dp"
+            android:contentDescription="Open app" />
+
+        <Button
+            android:id="@+id/widget_power"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3"
+            android:layout_marginStart="8dp"
+            android:text="TV"
+            android:textAllCaps="false"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="#1C1C1E" />
+
+        <Button
+            android:id="@+id/widget_vol_down"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/widget_btn_light"
+            android:text="-" />
+
+        <Button
+            android:id="@+id/widget_vol_up"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/widget_btn_light"
+            android:text="+" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/widget_skip_ad"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/widget_btn_light"
+        android:text="Skip Ad"
+        android:textAllCaps="false"
+        android:textSize="14sp"
+        android:singleLine="true" />
+</LinearLayout>

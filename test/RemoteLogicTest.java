@@ -246,7 +246,7 @@ public class RemoteLogicTest {
         check("cached input key is per-TV id", "tv-abc123_cached_input".equals(TvRegistry.prefKeyCachedInput(keyTv)));
 
         // 10. Identity keys survive an IP change
-        TvDevice bed = new TvDevice("192.168.1.71");
+        TvDevice bed = new TvDevice("192.168.1.13");
         bed.udn = "uuid:abcd-1234";
         bed.serialNumber = "SN987";
         bed.model = "M55Q7-H1";
@@ -269,7 +269,7 @@ public class RemoteLogicTest {
 
         // 11. matchBedroom: finds TV by identity at a NEW IP
         List<TvDevice> found = new ArrayList<>();
-        TvDevice living = new TvDevice("192.168.1.72");
+        TvDevice living = new TvDevice("192.168.1.6");
         living.udn = "uuid:living-1";
         living.port7345Open = true;
         TvDevice bedroomNewIp = new TvDevice("192.168.1.20");
@@ -277,14 +277,14 @@ public class RemoteLogicTest {
         bedroomNewIp.port7345Open = true;
         found.add(living);
         found.add(bedroomNewIp);
-        TvDevice match = ScanLogic.matchBedroom(found, "udn:uuid:abcd-1234", "192.168.1.71");
+        TvDevice match = ScanLogic.matchBedroom(found, "udn:uuid:abcd-1234", "192.168.1.13");
         check("match by identity finds new IP .20",
                 match != null && "192.168.1.20".equals(match.ip));
 
         // 12. matchBedroom: falls back to stored IP when identity unknown
-        TvDevice match2 = ScanLogic.matchBedroom(found, null, "192.168.1.72");
+        TvDevice match2 = ScanLogic.matchBedroom(found, null, "192.168.1.6");
         check("match by stored IP finds living room .6",
-                match2 != null && "192.168.1.72".equals(match2.ip));
+                match2 != null && "192.168.1.6".equals(match2.ip));
 
         // 13. matchBedroom: never guesses between two TVs on first run
         TvDevice match3 = ScanLogic.matchBedroom(found, null, null);
@@ -292,15 +292,15 @@ public class RemoteLogicTest {
 
         // 14. matchBedroom: first run with exactly one TV takes it
         List<TvDevice> one = new ArrayList<>();
-        TvDevice only = new TvDevice("192.168.1.71");
+        TvDevice only = new TvDevice("192.168.1.13");
         only.port7345Open = true;
         one.add(only);
         TvDevice match4 = ScanLogic.matchBedroom(one, null, null);
         check("first run, one TV -> take it",
-                match4 != null && "192.168.1.71".equals(match4.ip));
+                match4 != null && "192.168.1.13".equals(match4.ip));
 
         // 15. matchBedroom: empty list -> null
-        check("no devices -> null", ScanLogic.matchBedroom(new ArrayList<TvDevice>(), "udn:x", "192.168.1.71") == null);
+        check("no devices -> null", ScanLogic.matchBedroom(new ArrayList<TvDevice>(), "udn:x", "192.168.1.13") == null);
 
         // 17. v7 touchpad gestures — swipe maps to the probe-confirmed
         //     D-pad codes, tap is Select, a long still touch is nothing.
@@ -557,6 +557,36 @@ public class RemoteLogicTest {
                 && VizioApi.PATH_DEVICEINFO.equals("/state/device/deviceinfo"));
         check("getDeviceInfo exists", !methodGone("getDeviceInfo"));
         check("parseDeviceInfo exists", !methodGone("parseDeviceInfo"));
+
+        // v48.21: hardware volume-key step math — 5 per press, clamped 0–100.
+        check("volume key step is 5", VizioApi.VOLUME_KEY_STEP == 5);
+        check("volume up steps +5", VizioApi.stepVolume(50, 5) == 55);
+        check("volume down steps -5", VizioApi.stepVolume(50, -5) == 45);
+        check("volume up from 0", VizioApi.stepVolume(0, 5) == 5);
+        check("volume down from 100", VizioApi.stepVolume(100, -5) == 95);
+        check("volume up clamps at 100", VizioApi.stepVolume(98, 5) == 100);
+        check("volume up at 100 stays 100", VizioApi.stepVolume(100, 5) == 100);
+        check("volume down clamps at 0", VizioApi.stepVolume(2, -5) == 0);
+        check("volume down at 0 stays 0", VizioApi.stepVolume(0, -5) == 0);
+        check("volume step uses key constant",
+                VizioApi.stepVolume(50, VizioApi.VOLUME_KEY_STEP) == 55
+                        && VizioApi.stepVolume(50, -VizioApi.VOLUME_KEY_STEP) == 45);
+
+        // v48.23: sleep timer cycle Off -> 30 -> 60 -> 90 -> 120 -> Off.
+        check("sleep cycle Off -> 30", VizioApi.nextSleepTimerMinutes(0) == 30);
+        check("sleep cycle 30 -> 60", VizioApi.nextSleepTimerMinutes(30) == 60);
+        check("sleep cycle 60 -> 90", VizioApi.nextSleepTimerMinutes(60) == 90);
+        check("sleep cycle 90 -> 120", VizioApi.nextSleepTimerMinutes(90) == 120);
+        check("sleep cycle 120 -> Off", VizioApi.nextSleepTimerMinutes(120) == 0);
+        check("sleep cycle unknown -> 30", VizioApi.nextSleepTimerMinutes(-1) == 30);
+        check("sleep cycle 25 remaining -> 30", VizioApi.nextSleepTimerMinutes(25) == 30);
+        check("sleep cycle 55 remaining -> 60", VizioApi.nextSleepTimerMinutes(55) == 60);
+        check("sleep cycle 115 remaining -> 120", VizioApi.nextSleepTimerMinutes(115) == 120);
+        check("sleep cycle 130 -> Off", VizioApi.nextSleepTimerMinutes(130) == 0);
+        // v48.23: CC toggle target from the cached state.
+        check("CC toggle off -> on", Boolean.TRUE.equals(VizioApi.ccToggleTarget(0)));
+        check("CC toggle on -> off", Boolean.FALSE.equals(VizioApi.ccToggleTarget(1)));
+        check("CC toggle unknown -> null", VizioApi.ccToggleTarget(-1) == null);
 
         System.out.println("\n" + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);
