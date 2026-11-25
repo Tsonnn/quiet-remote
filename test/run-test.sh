@@ -60,17 +60,13 @@ grep -q "lastScan" "$JAVA_DIR/MainActivity.java" \
   || fail_source "setup Step 2 does not list the live scan"
 grep -q "No TVs found yet" "$JAVA_DIR/MainActivity.java" \
   || fail_source "setup has no empty-before-scan state"
-# TV model code or an IP address. The check is value-free on purpose:
-# it does not name any real model or address, so the test itself can
-# never leak one. The generic example IP is 192.168.1.50.
+# No user-visible string (quoted literal) in the app may contain a
+# real TV model or IP. (Historical notes in comments are allowed;
+# this check looks at string literals only.) The generic example
+# IP is 192.168.1.50.
 for f in "$JAVA_DIR/MainActivity.java" "$JAVA_DIR/TvRegistry.java" "$JAVA_DIR/VizioApi.java" "$JAVA_DIR/ScanLogic.java" "$JAVA_DIR/CastVolume.java"; do
-for f in "$JAVA_DIR/MainActivity.java" "$JAVA_DIR/TvRegistry.java" "$JAVA_DIR/VizioApi.java" "$JAVA_DIR/ScanLogic.java" "$JAVA_DIR/CastVolume.java"; do
-  if grep -o '"[^"]*"' "$f" | grep -E '192\.168\.1\.[0-9]+' | grep -qv '192\.168\.1\.50\|192\.168\.1\.0/24'; then
-    fail_source "private IP in a user-visible string in $f"
-  fi
-  grep -o '"[^"]*"' "$f" | grep -qE '[A-Z][0-9]{2}[A-Za-z]?-[A-Z][0-9]' \
-    && fail_source "TV model code in a user-visible string in $f"
-done
+  grep -o '"[^"]*"' "$f" | grep -q "192\.168\.1\.13\|192\.168\.1\.6\|192\.168\.1\.3\|bedroom TV\|living-room TV\|V505-G9" \
+    && fail_source "private TV model/IP in a user-visible string in $f"
 done
 grep -q "192\.168\.1\.50" "$JAVA_DIR/MainActivity.java" \
   || fail_source "manual-IP example is not the generic 192.168.1.50"
@@ -1056,13 +1052,8 @@ grep -q "you can't see it while the TV is off" "$JAVA_DIR/MainActivity.java" \
   || fail_source "Step 3 does not say the PIN cannot be seen while the TV is off"
 # --- Kept: v21 privacy (no hardcoded TVs/models/IPs in literals) ---
 for f in "$JAVA_DIR/MainActivity.java" "$JAVA_DIR/TvRegistry.java" "$JAVA_DIR/VizioApi.java" "$JAVA_DIR/ScanLogic.java" "$JAVA_DIR/CastVolume.java"; do
-for f in "$JAVA_DIR/MainActivity.java" "$JAVA_DIR/TvRegistry.java" "$JAVA_DIR/VizioApi.java" "$JAVA_DIR/ScanLogic.java" "$JAVA_DIR/CastVolume.java"; do
-  if grep -o '"[^"]*"' "$f" | grep -E '192\.168\.1\.[0-9]+' | grep -qv '192\.168\.1\.50\|192\.168\.1\.0/24'; then
-    fail_source "private IP in a user-visible string in $f"
-  fi
-  grep -o '"[^"]*"' "$f" | grep -qE '[A-Z][0-9]{2}[A-Za-z]?-[A-Z][0-9]' \
-    && fail_source "TV model code in a user-visible string in $f"
-done
+  grep -o '"[^"]*"' "$f" | grep -q "192\.168\.1\.13\|192\.168\.1\.6\|192\.168\.1\.3\|bedroom TV\|living-room TV\|V505-G9" \
+    && fail_source "v22 reintroduced a private TV model/IP in a user-visible string in $f"
 done
 grep -q "192\.168\.1\.50" "$JAVA_DIR/MainActivity.java" \
   || fail_source "v22 broke the generic manual-IP example"
@@ -1509,7 +1500,7 @@ grep -q "density is 1.875" "$JAVA_DIR/MainActivity.java" \
 echo "$PILLS_BODY" | grep -q "styledButton(tv.room, 15," \
   && fail_source "room pills still use the fixed 15 sp size that wrapped"
 # --- v29, second finding: the living-room pill showed the model
-# ("Den TV"), not the friendly name ("Den"). Root cause:
+# ("living-room TV"), not the friendly name ("Den"). Root cause:
 # parseTvName only looked for a "TV Name" item, but older firmware
 # (living-room TV, probe 2026-11-20) has no such item — its name lives
 # under "Display Name". ---
@@ -2265,9 +2256,10 @@ grep -q "verdictFor" "$JAVA_DIR/CastMedia.java" \
 # null read was treated as "session ended", wiping the pill
 # icon + strip. The receiver's volumeLevel (1.0) is the cast
 # session's own level, not the TV's SmartCast volume, so the
-# TV strip never paints the slider from it. The 48 dp volume
-# thumb also needs room at both ends (half cut off at 100%,
-# overlapping the speaker at 0%).
+# TV strip never paints the slider from it. The volume thumb
+# also needs room at both ends (half cut off at 100%,
+# overlapping the speaker at 0%) — 16 dp since v48.6, when the
+# thumb shrank 48 -> 32 dp.
 recv_body=$(sed -n '/public synchronized String getReceiverStatusJson/,/^        }/p' "$JAVA_DIR/CastVolume.java")
 [ "$(printf '%s' "$recv_body" | grep -c "requestReceiverStatus()")" = "2" ] \
   || fail_source "v48.11 the Cast status read does not retry once on a fresh connection"
@@ -2286,7 +2278,7 @@ printf '%s' "$tv_paint_body" | grep -q "volumeBar.setProgress" \
 cast_paint_body=$(sed -n '/private void paintCastStatus/,/^    }/p' "$JAVA_DIR/MainActivity.java")
 printf '%s' "$cast_paint_body" | grep -q "volumeBar.setProgress" \
   || fail_source "v48.11 the dongle strip lost its volume paint"
-grep -q "volumeBar.setPadding(dp(24), 0, dp(24), 0);" "$JAVA_DIR/MainActivity.java" \
+grep -q "volumeBar.setPadding(dp(16), 0, dp(16), 0);" "$JAVA_DIR/MainActivity.java" \
   || fail_source "v48.11 the volume thumb has no room at the ends"
 # v48.12: with a Chromecast dongle selected, a pad double-tap
 # skips the ad on the dongle (SKIP_AD, the same media message
@@ -2569,7 +2561,7 @@ grep -q "mainCcButton" "$JAVA_DIR/MainActivity.java" \
   || fail_source "v48.23 there is no main-screen CC control"
 grep -q "mainSleepButton" "$JAVA_DIR/MainActivity.java" \
   || fail_source "v48.23 there is no main-screen sleep control"
-grep -q "updateMainCcSleepUi" "$JAVA_DIR/MainActivity.java" \
+grep -q "updateMainCcSleepInputUi" "$JAVA_DIR/MainActivity.java" \
   || fail_source "v48.23 there is no main-screen CC/sleep repaint"
 qt_body=$(sed -n '/private Button quietTextButton/,/^    }/p' "$JAVA_DIR/MainActivity.java")
 printf '%s' "$qt_body" | grep -q "setTextSize(11)" \
@@ -2592,13 +2584,13 @@ printf '%s' "$cc_row" | grep -q "nextSleepTimerMinutes" \
 printf '%s' "$cc_row" | grep -q "styledButton\|pillKeyButton" \
   && fail_source "v48.23 the main CC/sleep controls use a heavy pill button"
 cc_ui=$(sed -n '/private void updateCcUi/,/^    }/p' "$JAVA_DIR/MainActivity.java")
-printf '%s' "$cc_ui" | grep -q "updateMainCcSleepUi()" \
+printf '%s' "$cc_ui" | grep -q "updateMainCcSleepInputUi()" \
   || fail_source "v48.23 updateCcUi does not repaint the main controls"
 sl_ui=$(sed -n '/private void updateSleepUi/,/^    }/p' "$JAVA_DIR/MainActivity.java")
-printf '%s' "$sl_ui" | grep -q "updateMainCcSleepUi()" \
+printf '%s' "$sl_ui" | grep -q "updateMainCcSleepInputUi()" \
   || fail_source "v48.23 updateSleepUi does not repaint the main controls"
 sel_body=$(sed -n '/private void selectTv/,/private void updateSelectorButtons/p' "$JAVA_DIR/MainActivity.java")
-printf '%s' "$sel_body" | grep -q "updateMainCcSleepUi()" \
+printf '%s' "$sel_body" | grep -q "updateMainCcSleepInputUi()" \
   || fail_source "v48.23 selectTv does not repaint the main CC/sleep controls"
 printf '%s' "$sel_body" | grep -q "refreshCcState()" \
   || fail_source "v48.23 selectTv does not read the CC state"
@@ -2608,7 +2600,8 @@ printf '%s' "$sel_body" | grep -q "refreshSleepState()" \
 # test phone screen (measured ~12 px short with the strip open) — the
 # pad gives back 12 dp of headroom, its margins tighten 8 -> 4 dp,
 # and the four button-row gaps tighten 8 -> 6 dp: 28 dp of room in
-# the strip-open state. The CC/Sleep row itself is untouched, the
+# the strip-open state. The CC/Sleep row itself is untouched apart
+# from its top padding, 16 dp since v48.6 (was 8), the
 # 40 dp swipe area is untouched, the pad never goes below 240 dp,
 # and there is still no ScrollView on the remote screen.
 grep -q "diameterPx - dp(12), dp(240)" "$JAVA_DIR/MainActivity.java" \
@@ -2627,7 +2620,7 @@ grep -q "appRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
   || fail_source "v48.24 the app row gap is not 6 dp"
 grep -q "volumeRow.setPadding(0, dp(6), 0, 0)" "$JAVA_DIR/MainActivity.java" \
   || fail_source "v48.24 the volume row gap is not 6 dp"
-grep -q "ccSleepRow.setPadding(0, dp(8), 0, 0)" "$JAVA_DIR/MainActivity.java" \
+grep -q "ccSleepRow.setPadding(0, dp(16), 0, 0)" "$JAVA_DIR/MainActivity.java" \
   || fail_source "v48.24 the CC/Sleep row itself was moved or restyled"
 # v48.25: auto-select the TV that's on, at launch only. The rule
 # is pure (TvRegistry.autoSelectIndex, JVM-tested): exactly one TV
@@ -2674,7 +2667,7 @@ grep -q "android.appwidget.provider" "$MANIFEST" \
 grep -q "@xml/tv_widget_info" "$MANIFEST" \
   || fail_source "v48.26 the manifest does not point at tv_widget_info"
 grep -q "android:label=\"Quiet Remote\"" "$MANIFEST" \
-  || fail_source "v48.26 the widget label is not the shipped app label"
+  || fail_source "v48.26 the widget label is not Quiet Remote"
 [ -f "$RES/layout/widget_tv.xml" ] \
   || fail_source "v48.26 the widget layout is missing"
 # v48.28 DELIBERATE: the room label is gone — the widget is one
@@ -3064,4 +3057,116 @@ grep -q '"Per-TV settings — " + roomLabel()' "$JAVA_DIR/MainActivity.java" \
   || fail_source "v48.3 the Per-TV header does not name the TV"
 grep -q "updatePerTvTitle();" < <(sed -n '/private void updateCcUi/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
   || fail_source "v48.3 the Per-TV header is not refreshed when the TV switches"
-echo "PASS: v29 room pills never wrap (single-line + END ellipsize, long names step down to 11 sp since v48.9, measured sizes) + E50 name fix (Display Name fallback, scan renames model-only paired TVs) + header scrolls sideways for 4–5 TVs (96 dp min, cog/power fixed) + away TVs dim (tappable, says so) + v28 kept + v31 double-tap Select + v32 buttons at the bottom + v33 bigger swipe area, same look + v34 Refresh lists found TVs in Settings + v35 pad down in the thumb zone + v36 whole area above the buttons swipes + double-taps + v37 a TV can be removed from the top list + v38 KB is a drawn keyboard icon + v39 Settings footer reads the real version + v40 power button is green on, red off + v41 both buttons are soft 3D and the hint fits inside the centre + v42 YouTube and Netflix match the user's logos + v43 keyboard pops up by itself, Select not OK, Send leaves the dialog open + v44 keyboard hint corrected (Select presses the highlighted key, highlight SEARCH to run the search) + v45 keyboard dialog has a Search button (Enter, CODE 13 live test) + v46 power button turns green fast on launch (last-known power restored, early refresh in parallel with the scan) + v47 keyboard hint corrected (Send runs the search by itself in YouTube, Search presses Enter, kept for other apps) + v47.2 power button flips at once on a toggle and re-reads at 5 s + v48 Chromecasts discovered by mDNS, minimal control (strip only since v48.7), no Play Services, no hardcoded devices + v48.1 a TV's built-in Cast is filtered out (TXT md + known TV IP), real Chromecasts still list + v48.2 discovery runs continuously with no 6-second stop, found Chromecasts persist as last-seen, and they list on the remote screen below the TV pills + v48.3 Cast diagnostics in Settings listed every Cast service before filtering, with the filter verdict, and a failed discovery retries on resume/Refresh — removed in v48.30, the filter verdict and the retry stay + v48.4 Cast resolves run one at a time from a queue with a fresh listener per attempt, and a failed or timed-out resolve retries up to 3 times + v48.5 the strip re-reads status 1 s after a Play/Pause/Stop command, polls every 5 s while open, and a failed re-read keeps the last good status + v48.6 the remote screen has an inline Chromecast strip: tap the button to select it (dark like a selected TV pill) and the strip appears under the row with what's playing, Play/Pause and Stop — tap again to hide it; the Settings list returns to the remote with the strip open and TV-pill selection is untouched + v48.7 the separate Chromecast control view is gone (the strip is the only control), the strip's unreachable line is short with no Refresh instruction, the Chromecast pill is the same size as the TV pills with a hand-drawn Cast icon, the TV pills carry a hand-drawn TV icon, the remote row has no redundant Chromecast: label, and the strip has no volume slider (the TV slider handles volume) + v48.8 the Chromecast row sits close under the TV pills (2 dp top padding) + v48.9 the bottom slider drives the Chromecast while one is selected (and the TV again on deselect), long pill names step to 11 sp with 12 dp icons so Bedroom Twelve fits, the pad shrinks by the strip's height while the strip is open so nothing is cut off at the bottom, and cast mode dims + disables the TV controls while a Chromecast is selected (tapping a TV pill leaves cast mode) + v48.10 casting to a TV shows the same strip under the pill row only while the session is active (the pill swaps to the Cast icon, TV controls stay live, the filter still keeps TVs out of the Chromecast list) + v48.11 TV-cast re-detection after lock/unlock is one poll tick: a dead socket after sleep is retried once on a fresh connection, a failed read keeps the last known session instead of wiping it, the poll always re-posts while the remote is on, the TV strip never paints the slider from the receiver volume, and the volume thumb has room at both ends + v48.12 with a Chromecast selected, a pad double-tap skips the ad on the dongle (SKIP_AD, same media message as Play/Pause/Stop), swipes stay dead, the pad stays enabled but dimmed with a hint that says so, and casting to a TV still double-taps Select + v48.13 the hint is full brightness in every mode: only the disc is dimmed in cast mode, the pad container is not, and the fade after first use is gone entirely + v48.14 the strip has a Skip Ad button after Stop, same style and size, sending SKIP_AD via castStripCommand in both the dongle and TV strips, one row fits on the test phone + v48.15 while the strip is open, a skippable ad is skipped by itself, once per break clip (breakStatus parses from MEDIA_STATUS, Settings switch defaults ON, Skip Ad button and double-tap untouched) + v48.16 the strip line counts down a cast ad break (\"Skippable in Ns\", then \"Skippable now\"), repainted every 1 s from the last poll while the strip is open, in both the dongle and TV strips, and the ticker never sends anything + v48.17 Settings showed the last cast MEDIA_STATUS for the dongle and TV strips — removed in v48.30 + v48.18 Settings kept the last 3 distinct cast statuses, newest first — removed in v48.30 + v48.19 a Goodnight button in the header turns off every TV that is on (toggle only when power is known on — off and unknown are never toggled, so Goodnight cannot switch a TV on), with a per-TV status line and the same optimistic flip + 1.5 s / 5 s re-reads as a power toggle + v48.20 while the strip is open, a BUFFERING cast status sends SKIP_AD by itself, at most twice per buffering episode (once when first seen, once ~6 s later), gated by the Auto-skip switch, with the v48.15 breakStatus auto-skip untouched + v48.21 phone volume keys drive the TV volume on the remote screen only (5 per press, clamped 0-100, same setVolumeTo as the slider so the Cast branch still applies, keys consumed so the phone's own volume never moves, mute key out of scope) + v48.22 Goodnight is quiet now — same spot and same behavior, but small (11 sp) dimmed text on the header background, no heavy black pill + v48.23 CC toggle + sleep timer on the main screen (quiet text controls under the volume row, same setCcTo/setSleepTimerTo as Settings, sleep cycles Off → 30 → 60 → 90 → 120 → Off) + v48.24 the CC/Sleep row is no longer cut off at the bottom: the pad gives back 12 dp of headroom (336 -> 324 dp full, 243 dp with the strip open, still above the 240 dp minimum), its margins tighten 8 -> 4 dp, and the nav/playback/app/volume row gaps tighten 8 -> 6 dp — 28 dp of room in the strip-open state, CC/Sleep row itself untouched, 40 dp swipe area untouched, still no ScrollView + v48.25 the app opens on the TV that's on: a launch-only pass reads fresh power for every paired TV and picks the one TV that is on (exactly one on; both on, both off, or any state unknown keeps the last-selected TV), a failed read counts as unknown so a stale cache never picks the wrong TV, and a manual pill tap always wins + v48.26 a home-screen widget controls the selected TV without opening the app (room name, Power with the same green/red/grey as the app, Vol - / + at the same 5-per-tap step, tap the room to open the app), network only on a background thread, no poller, and the app repaints the widget whenever it writes state + v48.27 buffering auto-skip gets a third try: at most 3 SKIP_AD sends per buffering episode (first, ~6 s later, ~12 s after the episode started), the same delayed runnable carries the third send, no fourth send ever, breakStatus auto-skip untouched + v48.28 the widget is a slim single row: Power + Vol - / + only, no room label or volume line, light silver like the app instead of dark, about half the height (minHeight 110 -> 56 dp), tapping the background opens the app, and with nothing paired the Power button reads 'No TV yet' + v48.29 the widget Power button reads the selected TV's room name instead of 'Power' (same button, same toggle, same green/red/grey, same slim 56 dp row, mixed case not ALL CAPS, long names ellipsize, 'No TV yet' when nothing is paired) + v48.30 the Cast diagnostics are gone from Settings (the v48.3 service list and the v48.17/v48.18 last-status history, with their recording code) — the filter verdict, the Auto-skip ads switch, auto-skip, the countdown, and the strip are all untouched + v48.31 the widget has a Skip Ad button in the same slim 56 dp single row, sending SKIP_AD to the selected TV's built-in Cast receiver on a background thread with no status check and no poller, failing quietly when nothing is casting, no dongle + v48.32 the widget is two rows now (the user: use the space wisely at 4x1 — the single-row buttons sat pinned to the top with the bottom half empty, so the single-row redesign was dropped before shipping): row 1 Power [TV name] + Vol - / + by weight, row 2 a large full-width Skip Ad, both rows filling the widget height with no dead space, minHeight back to 110 dp because the space is used now, and all four buttons share the same pill shape (Power state colour from a pill drawable, Vol/Skip white pills) + v48.33 the widget has a Q button at the start of row 1 that opens the app (the two rows filled the whole widget so the background tap was nearly unreachable — only the 8 dp padding frame was exposed root); the Q button uses the app icon and the same openAppIntent as the root tap, row 1 is Q + Power [TV name] + Vol - / + with Power still widest,  + v48.34 the widget open-app button is a hand-drawn magnifying glass (open ring + handle, dark on the white pill) instead of the pasted app icon — same button, same spot first in row 1, same size, same openAppIntent wiring, row 2 Skip Ad and the 110 dp height untouched + v48.1 startup update check (public 48.1, versionCode 87): Settings toggle default ON, GitHub latest-release check once per launch on a background thread, silent on any failure, notice row under the TV pills with Download (DownloadManager + installer) and Dismiss (remembers the tag) + v48.3 Settings is six outlined boxes (public 48.3, versionCode 89): TVs on this WiFi, Pair with the TV, Per-TV settings with the room name in the header, TV address, This TV, and App settings last with Auto-skip ads, Check for updates and the version line inside — same buttons, same behaviour, only the grouping moved"
+# v48.4: manual "CHECK FOR UPDATES NOW" in the App settings
+# box — same GitHub check as startup, on demand: it runs
+# even with the toggle off and ignores the dismissed tag, so
+# a dismissed update can be offered again. The result shows
+# in Settings (status line + Download button); the notice
+# row is never shown by it, the dismissed tag is never
+# cleared, and the startup check is unchanged.
+MANUAL_LINE=$(line_of 'CHECK FOR UPDATES NOW')
+[ -n "$MANUAL_LINE" ] && [ "$BOX_APP" -lt "$MANUAL_LINE" ] && [ "$MANUAL_LINE" -lt "$FOOT_LINE" ] \
+  || fail_source "v48.4 the manual check button is not in the App settings box"
+grep -q 'private void checkForUpdates(boolean manual)' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 there is no shared update check with a manual flag"
+grep -q 'checkForUpdates(false)' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 the startup check no longer runs the shared check"
+grep -q 'checkForUpdates(true)' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 the manual check does not run the shared check"
+grep -q '!isManual && prefs != null' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 the dismissed tag is not bypassed on the manual path"
+grep -q 'showManualUpdateResult' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 there is no manual update result"
+grep -q "You're on the latest version." "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 there is no up-to-date status"
+grep -q "Couldn't check for updates" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 there is no failed-check status"
+grep -q 'downloadUpdate(manualDownloadButton)' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.4 the manual download does not use the existing download path"
+# v48.5: Input toggle on the main screen — a third quiet text
+# control in the CC/Sleep row, bottom right: a fixed "Next input"
+# label (the current input is never shown — tap until the TV
+# shows the input you want), each tap steps to the next input in
+# the TV's list and wraps (pure VizioApi.nextInput helper, set by
+# name via the same setInputTo Settings uses, read back to
+# confirm). Unknown state refreshes first; a missing list is
+# fetched on demand (the SHOW INPUTS loader), then the step runs.
+# It follows the selected TV like CC and Sleep, and stays live
+# in cast mode.
+grep -q "public static String nextInput" "$JAVA_DIR/VizioApi.java" \
+  || fail_source "v48.5 there is no next-input helper"
+grep -q "mainInputButton" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.5 there is no main-screen Input control"
+grep -q "updateMainCcSleepInputUi" "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.5 the main-screen repaint does not cover Input"
+grep -q "updateMainCcSleepUi" "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.5 the old updater name is still present"
+cc_row=$(sed -n '/LinearLayout ccSleepRow = new LinearLayout/,/controlsLayout.addView(ccSleepRow)/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$cc_row" | grep -q 'quietTextButton("Next input")' \
+  || fail_source "v48.5 the Input control is not a quiet text button reading Next input in the CC/Sleep row"
+printf '%s' "$cc_row" | grep -q 'quietTextButton("Input:' \
+  && fail_source "v48.5 the Input control still builds a current-input label"
+printf '%s' "$cc_row" | grep -q "stepInput" \
+  || fail_source "v48.5 the Input control does not step to the next input"
+printf '%s' "$cc_row" | grep -q "styledButton\|pillKeyButton" \
+  && fail_source "v48.5 the Input control uses a heavy pill button"
+step_body=$(sed -n '/private void stepInput/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$step_body" | grep -q "VizioApi.nextInput" \
+  || fail_source "v48.5 the step does not compute the next input from the list"
+printf '%s' "$step_body" | grep -q "setInputTo(next)" \
+  || fail_source "v48.5 the step does not switch by name"
+printf '%s' "$step_body" | grep -q "loadInputs(true)" \
+  || fail_source "v48.5 a missing inputs list is not fetched before stepping"
+printf '%s' "$step_body" | grep -q "refreshFastStateFor" \
+  || fail_source "v48.5 an unknown current input is not refreshed first"
+inp_ui=$(sed -n '/private void updateMainCcSleepInputUi/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$inp_ui" | grep -q '"Input: ' \
+  && fail_source "v48.5 the updater still builds a current-input label for the Input button"
+grep -q "updateMainCcSleepInputUi();" < <(sed -n '/private void setInputTo/,/^    }/p' "$JAVA_DIR/MainActivity.java") \
+  || fail_source "v48.5 an input switch does not repaint the main row at once"
+# v48.6: the volume thumb was too big (the user's screenshot — the
+# circle dwarfed the row), the number carried a "%", the track
+# was a thin ~2 dp line, and the toggles sat cramped at the
+# bottom. Thumb 48 -> 32 dp (number still ~14 sp, "100" shrinks
+# to fit), number only, track 5 dp, toggles row 8 -> 16 dp top
+# padding. The end padding (v48.11) moves to 16 dp with the
+# thumb — half the thumb, same room at both ends.
+grep -q 'new VolumeThumbDrawable(this, 32)' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 the volume thumb is not 32 dp"
+grep -q 'new VolumeThumbDrawable(this, 48)' "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.6 the old 48 dp volume thumb is still there"
+grep -q 'volumeBar.setThumbOffset(dp(16))' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 the thumb offset is not half the 32 dp thumb"
+grep -q 'volumeBar.setPadding(dp(16), 0, dp(16), 0);' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 the volume thumb has no room at the ends"
+thumb_body=$(sed -n '/private static class VolumeThumbDrawable/,/^    }/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$thumb_body" | grep -q 'level + "%"' \
+  && fail_source "v48.6 the thumb still shows a percent sign"
+printf '%s' "$thumb_body" | grep -q 'String.valueOf(level)' \
+  || fail_source "v48.6 the thumb does not show the number alone"
+printf '%s' "$thumb_body" | grep -q 'numberTextSizePx = 14f' \
+  || fail_source "v48.6 the thumb number is not 14 sp"
+grep -q 'volumeBar.setMinHeight(dp(5));' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 the track has no minimum height"
+grep -q 'volumeBar.setMaxHeight(dp(5));' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 the track has no maximum height"
+cc_row_pad=$(sed -n '/LinearLayout ccSleepRow = new LinearLayout/,/mainCcButton = quietTextButton/p' "$JAVA_DIR/MainActivity.java")
+printf '%s' "$cc_row_pad" | grep -q 'setPadding(0, dp(16), 0, 0)' \
+  || fail_source "v48.6 the toggles row has no extra room above it"
+# v48.6 (the user): RUN FIRST-TIME SETUP AGAIN moved out of the This TV
+# box to the bottom of the App settings box — after the manual
+# update check, before the version footer (still the last line).
+# Same button, same behaviour, only its box moved.
+grep -q 'boxApp.addView(setupAgainButton)' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 RUN FIRST-TIME SETUP AGAIN is not in the App settings box"
+grep -q 'boxThisTv.addView(setupAgainButton)' "$JAVA_DIR/MainActivity.java" \
+  && fail_source "v48.6 RUN FIRST-TIME SETUP AGAIN is still in the This TV box"
+SETUP_LINE=$(line_of 'boxApp.addView(setupAgainButton)')
+DL_LINE=$(line_of 'boxApp.addView(manualDownloadButton)')
+[ -n "$SETUP_LINE" ] && [ -n "$DL_LINE" ] && [ "$DL_LINE" -lt "$SETUP_LINE" ] && [ "$SETUP_LINE" -lt "$FOOT_LINE" ] \
+  || fail_source "v48.6 RUN FIRST-TIME SETUP AGAIN is not after the manual update check and before the footer"
+grep -q 'boxThisTv.addView(forgetButton)' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 FORGET PAIRING is no longer in the This TV box"
+grep -q 'boxThisTv.addView(removeButton)' "$JAVA_DIR/MainActivity.java" \
+  || fail_source "v48.6 REMOVE THIS TV is no longer in the This TV box"
+echo "PASS: v29 room pills never wrap (single-line + END ellipsize, long names step down to 11 sp since v48.9, measured sizes) + E50 name fix (Display Name fallback, scan renames model-only paired TVs) + header scrolls sideways for 4–5 TVs (96 dp min, cog/power fixed) + away TVs dim (tappable, says so) + v28 kept + v31 double-tap Select + v32 buttons at the bottom + v33 bigger swipe area, same look + v34 Refresh lists found TVs in Settings + v35 pad down in the thumb zone + v36 whole area above the buttons swipes + double-taps + v37 a TV can be removed from the top list + v38 KB is a drawn keyboard icon + v39 Settings footer reads the real version + v40 power button is green on, red off + v41 both buttons are soft 3D and the hint fits inside the centre + v42 YouTube and Netflix match the user's logos + v43 keyboard pops up by itself, Select not OK, Send leaves the dialog open + v44 keyboard hint corrected (Select presses the highlighted key, highlight SEARCH to run the search) + v45 keyboard dialog has a Search button (Enter, CODE 13 live test) + v46 power button turns green fast on launch (last-known power restored, early refresh in parallel with the scan) + v47 keyboard hint corrected (Send runs the search by itself in YouTube, Search presses Enter, kept for other apps) + v47.2 power button flips at once on a toggle and re-reads at 5 s + v48 Chromecasts discovered by mDNS, minimal control (strip only since v48.7), no Play Services, no hardcoded devices + v48.1 a TV's built-in Cast is filtered out (TXT md + known TV IP), real Chromecasts still list + v48.2 discovery runs continuously with no 6-second stop, found Chromecasts persist as last-seen, and they list on the remote screen below the TV pills + v48.3 Cast diagnostics in Settings listed every Cast service before filtering, with the filter verdict, and a failed discovery retries on resume/Refresh — removed in v48.30, the filter verdict and the retry stay + v48.4 Cast resolves run one at a time from a queue with a fresh listener per attempt, and a failed or timed-out resolve retries up to 3 times + v48.5 the strip re-reads status 1 s after a Play/Pause/Stop command, polls every 5 s while open, and a failed re-read keeps the last good status + v48.6 the remote screen has an inline Chromecast strip: tap the button to select it (dark like a selected TV pill) and the strip appears under the row with what's playing, Play/Pause and Stop — tap again to hide it; the Settings list returns to the remote with the strip open and TV-pill selection is untouched + v48.7 the separate Chromecast control view is gone (the strip is the only control), the strip's unreachable line is short with no Refresh instruction, the Chromecast pill is the same size as the TV pills with a hand-drawn Cast icon, the TV pills carry a hand-drawn TV icon, the remote row has no redundant Chromecast: label, and the strip has no volume slider (the TV slider handles volume) + v48.8 the Chromecast row sits close under the TV pills (2 dp top padding) + v48.9 the bottom slider drives the Chromecast while one is selected (and the TV again on deselect), long pill names step to 11 sp with 12 dp icons so Bedroom Twelve fits, the pad shrinks by the strip's height while the strip is open so nothing is cut off at the bottom, and cast mode dims + disables the TV controls while a Chromecast is selected (tapping a TV pill leaves cast mode) + v48.10 casting to a TV shows the same strip under the pill row only while the session is active (the pill swaps to the Cast icon, TV controls stay live, the filter still keeps TVs out of the Chromecast list) + v48.11 TV-cast re-detection after lock/unlock is one poll tick: a dead socket after sleep is retried once on a fresh connection, a failed read keeps the last known session instead of wiping it, the poll always re-posts while the remote is on, the TV strip never paints the slider from the receiver volume, and the volume thumb has room at both ends + v48.12 with a Chromecast selected, a pad double-tap skips the ad on the dongle (SKIP_AD, same media message as Play/Pause/Stop), swipes stay dead, the pad stays enabled but dimmed with a hint that says so, and casting to a TV still double-taps Select + v48.13 the hint is full brightness in every mode: only the disc is dimmed in cast mode, the pad container is not, and the fade after first use is gone entirely + v48.14 the strip has a Skip Ad button after Stop, same style and size, sending SKIP_AD via castStripCommand in both the dongle and TV strips, one row fits on the test phone + v48.15 while the strip is open, a skippable ad is skipped by itself, once per break clip (breakStatus parses from MEDIA_STATUS, Settings switch defaults ON, Skip Ad button and double-tap untouched) + v48.16 the strip line counts down a cast ad break (\"Skippable in Ns\", then \"Skippable now\"), repainted every 1 s from the last poll while the strip is open, in both the dongle and TV strips, and the ticker never sends anything + v48.17 Settings showed the last cast MEDIA_STATUS for the dongle and TV strips — removed in v48.30 + v48.18 Settings kept the last 3 distinct cast statuses, newest first — removed in v48.30 + v48.19 a Goodnight button in the header turns off every TV that is on (toggle only when power is known on — off and unknown are never toggled, so Goodnight cannot switch a TV on), with a per-TV status line and the same optimistic flip + 1.5 s / 5 s re-reads as a power toggle + v48.20 while the strip is open, a BUFFERING cast status sends SKIP_AD by itself, at most twice per buffering episode (once when first seen, once ~6 s later), gated by the Auto-skip switch, with the v48.15 breakStatus auto-skip untouched + v48.21 phone volume keys drive the TV volume on the remote screen only (5 per press, clamped 0-100, same setVolumeTo as the slider so the Cast branch still applies, keys consumed so the phone's own volume never moves, mute key out of scope) + v48.22 Goodnight is quiet now — same spot and same behavior, but small (11 sp) dimmed text on the header background, no heavy black pill + v48.23 CC toggle + sleep timer on the main screen (quiet text controls under the volume row, same setCcTo/setSleepTimerTo as Settings, sleep cycles Off → 30 → 60 → 90 → 120 → Off) + v48.24 the CC/Sleep row is no longer cut off at the bottom: the pad gives back 12 dp of headroom (336 -> 324 dp full, 243 dp with the strip open, still above the 240 dp minimum), its margins tighten 8 -> 4 dp, and the nav/playback/app/volume row gaps tighten 8 -> 6 dp — 28 dp of room in the strip-open state, CC/Sleep row itself untouched, 40 dp swipe area untouched, still no ScrollView + v48.25 the app opens on the TV that's on: a launch-only pass reads fresh power for every paired TV and picks the one TV that is on (exactly one on; both on, both off, or any state unknown keeps the last-selected TV), a failed read counts as unknown so a stale cache never picks the wrong TV, and a manual pill tap always wins + v48.26 a home-screen widget controls the selected TV without opening the app (room name, Power with the same green/red/grey as the app, Vol - / + at the same 5-per-tap step, tap the room to open the app), network only on a background thread, no poller, and the app repaints the widget whenever it writes state + v48.27 buffering auto-skip gets a third try: at most 3 SKIP_AD sends per buffering episode (first, ~6 s later, ~12 s after the episode started), the same delayed runnable carries the third send, no fourth send ever, breakStatus auto-skip untouched + v48.28 the widget is a slim single row: Power + Vol - / + only, no room label or volume line, light silver like the app instead of dark, about half the height (minHeight 110 -> 56 dp), tapping the background opens the app, and with nothing paired the Power button reads 'No TV yet' + v48.29 the widget Power button reads the selected TV's room name instead of 'Power' (same button, same toggle, same green/red/grey, same slim 56 dp row, mixed case not ALL CAPS, long names ellipsize, 'No TV yet' when nothing is paired) + v48.30 the Cast diagnostics are gone from Settings (the v48.3 service list and the v48.17/v48.18 last-status history, with their recording code) — the filter verdict, the Auto-skip ads switch, auto-skip, the countdown, and the strip are all untouched + v48.31 the widget has a Skip Ad button in the same slim 56 dp single row, sending SKIP_AD to the selected TV's built-in Cast receiver on a background thread with no status check and no poller, failing quietly when nothing is casting, no dongle + v48.32 the widget is two rows now (the user: use the space wisely at 4x1 — the single-row buttons sat pinned to the top with the bottom half empty, so the single-row redesign was dropped before shipping): row 1 Power [TV name] + Vol - / + by weight, row 2 a large full-width Skip Ad, both rows filling the widget height with no dead space, minHeight back to 110 dp because the space is used now, and all four buttons share the same pill shape (Power state colour from a pill drawable, Vol/Skip white pills) + v48.33 the widget has a Q button at the start of row 1 that opens the app (the two rows filled the whole widget so the background tap was nearly unreachable — only the 8 dp padding frame was exposed root); the Q button uses the app icon and the same openAppIntent as the root tap, row 1 is Q + Power [TV name] + Vol - / + with Power still widest,  + v48.34 the widget open-app button is a hand-drawn magnifying glass (open ring + handle, dark on the white pill) instead of the pasted app icon — same button, same spot first in row 1, same size, same openAppIntent wiring, row 2 Skip Ad and the 110 dp height untouched + v48.1 startup update check (public 48.1, versionCode 87): Settings toggle default ON, GitHub latest-release check once per launch on a background thread, silent on any failure, notice row under the TV pills with Download (DownloadManager + installer) and Dismiss (remembers the tag) + v48.3 Settings is six outlined boxes (public 48.3, versionCode 89): TVs on this WiFi, Pair with the TV, Per-TV settings with the room name in the header, TV address, This TV, and App settings last with Auto-skip ads, Check for updates and the version line inside — same buttons, same behaviour, only the grouping moved + v48.4 Settings has a CHECK FOR UPDATES NOW button in the App settings box: same GitHub check as startup, on demand — runs even with the toggle off, ignores the dismissed tag so a dismissed update can be offered again, result shows in Settings (status line + Download button via the existing DownloadManager path), the notice row is never shown by it, the dismissed tag is never cleared, and the startup check is unchanged + v48.5 Input toggle on the main screen (public 48.5, versionCode 91): a third quiet text control in the CC/Sleep row reads "Next input" (fixed label, the current input is never shown), each tap steps to the next input in the TV's list and wraps (pure VizioApi.nextInput helper, set by name with a read-back), unknown state refreshes first, a missing list is fetched on demand, and it follows the selected TV like CC and Sleep + v48.6 the volume thumb is 32 dp (was 48) with the number alone at 14 sp and no percent sign, the track is 5 dp thick (was the ~2 dp default), and the toggles row has 16 dp above it (was 8) + v48.6 RUN FIRST-TIME SETUP AGAIN moved from the This TV box to the bottom of the App settings box, after the manual update check and before the version footer (still the last line)"

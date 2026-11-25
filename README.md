@@ -1,6 +1,6 @@
 # Quiet Remote
 
-**Download the app: [Quiet-Remote-v48.3.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.3/Quiet-Remote-v48.3.apk)** — tap to download, then open it to install. Free, no ads, no account.
+**Download the app: [Quiet-Remote-v48.6.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.6/Quiet-Remote-v48.6.apk)** — tap to download, then open it to install. Free, no ads, no account.
 
 ## Quick start
 
@@ -29,8 +29,8 @@ TV directly over your home WiFi.
 - **Apple-style remote.** A big touchpad you swipe to move around
   menus and tap to select, like the aluminium Apple TV remote.
 - **Volume that jumps.** Drag the slider and the volume goes straight
-  there — it does not creep up one step at a time. Tap the speaker
-  icon to mute.
+  there — it does not creep up one step at a time. The thumb is small
+  and shows just the number. Tap the speaker icon to mute.
 - **Your phone's volume keys work too.** While the app is open, the
   volume up / down buttons on your phone change the TV volume.
 - **The usual buttons.** Power, mute, home, menu, back, and playback
@@ -62,9 +62,12 @@ TV directly over your home WiFi.
   app. Tap the magnifying glass — or anywhere on the widget
   background — to open the remote.
 - **Goodnight.** One quiet tap turns off every TV that is on.
-- **Closed captions and sleep timer, on the main screen.** Two quiet
-  controls under the remote that follow the selected TV — the same
-  per-TV settings as in Settings.
+- **Closed captions, sleep timer, and input, on the main screen.** Three
+  quiet controls under the remote that follow the selected TV — the
+  same per-TV settings as in Settings, plus a "Next input" button:
+  tap it to step to the next input, and keep tapping until the input
+  you want appears. It cycles every input, including ones with
+  nothing plugged in, and wraps back to the start.
 - **It picks the TV that is on.** On launch, when more than one TV
   is paired, the app selects the TV that is on. Your own tap always
   wins — the app never overrides a TV you picked.
@@ -74,12 +77,15 @@ TV directly over your home WiFi.
   box whose header names the TV they follow; app settings —
   auto-skip ads, check for updates — sit in their own box at the
   very bottom, with the version line inside it, so you can always
-  tell which build you have.
+  tell which build you have. RUN FIRST-TIME SETUP AGAIN sits at the
+  bottom of that box.
 - **It checks for updates.** A "Check for updates" switch in
   Settings (on by default). When the app starts, it quietly asks
   GitHub for the latest release, and when a newer version exists it
   shows a notice with a Download button — one tap downloads the
-  new version and opens the installer.
+  new version and opens the installer. There is also a CHECK FOR
+  UPDATES NOW button in Settings: it checks right now, even with
+  the switch off, and brings back an update you dismissed.
 - **The Q icon.** The app's mark is a black touchpad disc as a Q
   on silver, drawn by hand — no stock art, no VIZIO logo.
 - **Per-TV settings.** Sleep timer, picture mode, and closed captions
@@ -99,7 +105,7 @@ TV directly over your home WiFi.
 
 ## Install
 
-1. Download `Quiet-Remote-v48.3.apk` from the
+1. Download `Quiet-Remote-v48.6.apk` from the
    [latest release](../../releases/latest).
 2. On your phone, allow installing from unknown sources for your
    browser or file manager, then open the APK to install it.
@@ -157,7 +163,7 @@ android-34, and JDK 17. Edit the `SDK` and `JAVA_HOME` paths at the
 top of `build-apk.sh` if yours are elsewhere.
 
 ```sh
-./build-apk.sh                # produces Quiet-Remote-v48.3.apk
+./build-apk.sh                # produces Quiet-Remote-v48.6.apk
 ./build-apk.sh my-build.apk   # custom output name
 ```
 

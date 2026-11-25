@@ -1,6 +1,6 @@
 # Quiet Remote — User Manual
 
-**Draft — for version 48.3.** Quiet Remote is a free Android remote for Vizio SmartCast TVs. No ads, no account, no login, no cloud, no monthly fee. Your phone talks to your TV directly over your home WiFi.
+**Draft — for version 48.6.** Quiet Remote is a free Android remote for Vizio SmartCast TVs. No ads, no account, no login, no cloud, no monthly fee. Your phone talks to your TV directly over your home WiFi.
 
 ## To check on the live app
 
@@ -113,13 +113,13 @@ The big black circle is the touchpad. It sits just above the buttons, at the bot
 
 ### Volume
 
-- Drag the **slider** to the level you want. The number sits in the thumb (for example "50%"). The app sets the volume directly — no repeated tapping.
+- Drag the **slider** to the level you want. The number sits in the thumb (for example "50"). The app sets the volume directly — no repeated tapping.
 - Tap the **speaker icon** to mute, and tap it again to unmute.
 - Your phone's **volume keys** drive the TV volume too, while the remote is open. Each press moves it 5 points. The phone's own volume never changes.
 
-### Captions and sleep timer on the main screen
+### Captions, sleep timer, and input on the main screen
 
-Under the volume row, two quiet text controls follow the selected TV: **CC** turns closed captions on or off, and **Sleep** steps the sleep timer through Off, 30, 60, 90, then 120 minutes, then back to Off. They do the same as the matching items in Settings.
+Under the volume row, three quiet text controls follow the selected TV: **CC** turns closed captions on or off, **Sleep** steps the sleep timer through Off, 30, 60, 90, then 120 minutes, then back to Off, and **Input** reads "Next input" — tap it to step to the next input, and keep tapping until the input you want appears. It cycles through every input, including ones with nothing plugged in (so a tap can land on a blank screen, just like the INPUT button on the physical remote), and wraps back to the start. CC and Sleep do the same as the matching items in Settings.
 
 ### Casting — the mini-player strip
 
@@ -166,15 +166,15 @@ Sleep timer, picture mode, and closed captions are per TV — switching TVs show
 
 **TV address** — if a TV gets a new IP the app finds it by itself. Only type an IP here if auto-find keeps failing — it applies to the TV selected on the remote screen. Tap **USE THIS IP** to use it.
 
-**This TV** — **FORGET PAIRING (UNPAIR THIS TV)** removes the pairing for the selected TV. Tap **PAIR** to pair it again. The TV stays on the top pills. **REMOVE THIS TV FROM THE REMOTE** takes the selected TV off the remote entirely: its pill leaves the top list, along with its pairing, IP and saved settings. Tap **Refresh** to find it again if you want it back. **RUN FIRST-TIME SETUP AGAIN** opens the first-time setup. This never unpairs anything.
+**This TV** — **FORGET PAIRING (UNPAIR THIS TV)** removes the pairing for the selected TV. Tap **PAIR** to pair it again. The TV stays on the top pills. **REMOVE THIS TV FROM THE REMOTE** takes the selected TV off the remote entirely: its pill leaves the top list, along with its pairing, IP and saved settings. Tap **Refresh** to find it again if you want it back.
 
-**App settings** — at the very bottom. **Auto-skip ads** — On (the default) or Off. When it is on, a skippable ad is skipped by itself while the cast strip is open. **Check for updates** — On (the default) or Off. When it is on, the app checks GitHub for a newer version each time it starts up, and shows a notice with a Download button when one is available. The version line sits at the bottom of this box.
+**App settings** — at the very bottom. **Auto-skip ads** — On (the default) or Off. When it is on, a skippable ad is skipped by itself while the cast strip is open. **Check for updates** — On (the default) or Off. When it is on, the app checks GitHub for a newer version each time it starts up, and shows a notice with a Download button when one is available. **CHECK FOR UPDATES NOW** checks GitHub right now, even with the toggle off — it brings back an update you dismissed. **RUN FIRST-TIME SETUP AGAIN** opens the first-time setup. This never unpairs anything. The version line sits at the bottom of this box.
 
 ## Checking for updates
 
 - **Check for updates** — On (the default) or Off, in Settings, in the App settings box at the bottom. When it is on, the app quietly asks GitHub whether a newer version exists each time it starts up.
 - When a newer version is available, a slim notice appears under the TV pills: "Update available: vX.Y", with **Download** and **Dismiss** buttons.
-- **Download** downloads the new version and opens the installer for you. **Dismiss** hides the notice until the next launch.
+- **Download** downloads the new version and opens the installer for you. **Dismiss** hides the notice for that version — it will not prompt again until a newer version appears. Tap **CHECK FOR UPDATES NOW** in Settings to bring a dismissed update back.
 - The check runs once per launch, on a background thread, so it never slows the remote down. If there is no network, or the check fails for any reason, nothing happens — the remote just works as normal.
 
 ## Your privacy

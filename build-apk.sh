@@ -2,11 +2,11 @@
 # Manual APK build — no Gradle daemon, no plugin downloads.
 # Uses only the Android SDK build-tools already installed in this VM:
 #   aapt2 (resources) -> javac -> d8 (dex) -> zipalign -> apksigner
-# Produces: Quiet-Remote-v48.3.apk (debug-signed, sideload-installable)
-# Usage: ./build-apk.sh [output-apk-name]  (default: Quiet-Remote-v48.3.apk)
+# Produces: Quiet-Remote-v48.6.apk (debug-signed, sideload-installable)
+# Usage: ./build-apk.sh [output-apk-name]  (default: Quiet-Remote-v48.6.apk)
 set -euo pipefail
 
-OUT_APK="${1:-Quiet-Remote-v48.3.apk}"
+OUT_APK="${1:-Quiet-Remote-v48.6.apk}"
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 SDK=/home/hatch/Android/sdk
@@ -28,7 +28,7 @@ echo "== 2. Link APK (aapt2 link)"
   -I "$ANDROID_JAR" \
   --manifest "$ROOT/app/src/main/AndroidManifest.xml" \
   --min-sdk-version 26 --target-sdk-version 34 \
-  --version-code 89 --version-name 48.3 \
+  --version-code 92 --version-name 48.6 \
   --auto-add-overlay \
   --java "$BUILD/gen" \
   -o "$BUILD/app-unsigned.apk" \

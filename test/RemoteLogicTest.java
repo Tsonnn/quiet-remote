@@ -4,6 +4,7 @@ import com.tom.tvremote.TouchpadGesture;
 import com.tom.tvremote.TvRegistry;
 import com.tom.tvremote.VizioApi;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -195,7 +196,7 @@ public class RemoteLogicTest {
         check("steps target clamped to 100", VizioApi.volumeStepsToTarget(95, 150) == 5);
         check("steps target clamped to 0", VizioApi.volumeStepsToTarget(5, -10) == -5);
 
-        // 9g. v6 speed policy — probe 2026-11-20 (bedroom TV):
+        // 9g. v6 speed policy — probe 2026-11-20 (bedroom bedroom TV):
         //     full lists are slow (audio 4,362 ms, picture 3,868 ms,
         //     channels 2,047 ms, system 1,636 ms), single reads are
         //     fast (volume 331 ms, mute 243 ms, input 300 ms, power
@@ -587,6 +588,17 @@ public class RemoteLogicTest {
         check("CC toggle off -> on", Boolean.TRUE.equals(VizioApi.ccToggleTarget(0)));
         check("CC toggle on -> off", Boolean.FALSE.equals(VizioApi.ccToggleTarget(1)));
         check("CC toggle unknown -> null", VizioApi.ccToggleTarget(-1) == null);
+        // v48.5: next input in the cycle, wrapping to the first.
+        List<String> three = Arrays.asList("HDMI-1", "HDMI-2", "COMP");
+        check("next input middle -> next", "HDMI-2".equals(VizioApi.nextInput("HDMI-1", three)));
+        check("next input last -> first", "HDMI-1".equals(VizioApi.nextInput("COMP", three)));
+        check("next input current not in list -> first", "HDMI-1".equals(VizioApi.nextInput("SMARTCAST", three)));
+        check("next input SMARTCAST in list -> next", "HDMI-2".equals(VizioApi.nextInput("SMARTCAST", Arrays.asList("HDMI-1", "SMARTCAST", "HDMI-2"))));
+        check("next input HDMI-1 -> SMARTCAST", "SMARTCAST".equals(VizioApi.nextInput("HDMI-1", Arrays.asList("HDMI-1", "SMARTCAST"))));
+        check("next input single input wraps to itself", "HDMI-1".equals(VizioApi.nextInput("HDMI-1", Arrays.asList("HDMI-1"))));
+        check("next input empty list -> null", VizioApi.nextInput("HDMI-1", new ArrayList<String>()) == null);
+        check("next input null list -> null", VizioApi.nextInput("HDMI-1", null) == null);
+        check("next input null current -> null", VizioApi.nextInput(null, three) == null);
 
         System.out.println("\n" + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);

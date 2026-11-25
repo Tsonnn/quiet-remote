@@ -98,7 +98,7 @@ import javax.net.ssl.X509TrustManager;
  * one-letter-at-a-time code never shipped and lives nowhere
  * on disk. No other change.
  *
- * Quiet Remote v47 — multiple TVs, Cast volume,
+ * Quiet Remote v47 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -117,7 +117,7 @@ import javax.net.ssl.X509TrustManager;
  * The Vizio main-search issue (Send does not work in the TV's
  * own SmartCast search) is undiagnosed and untouched here.
  *
- * Quiet Remote v46 — multiple TVs, Cast volume,
+ * Quiet Remote v46 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -139,7 +139,7 @@ import javax.net.ssl.X509TrustManager;
  * unchanged. All v45 behaviour is kept (keyboard Search button,
  * everything else).
  *
- * Quiet Remote v45 — multiple TVs, Cast volume,
+ * Quiet Remote v45 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -167,7 +167,7 @@ import javax.net.ssl.X509TrustManager;
  * hint, Send leaves the dialog open, DEL, Close,
  * Enter-as-Send).
  *
- * Quiet Remote v44 — multiple TVs, Cast volume,
+ * Quiet Remote v44 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -187,7 +187,7 @@ import javax.net.ssl.X509TrustManager;
  * itself, Select not OK, Send leaves the dialog open, DEL,
  * Close, Enter-as-Send).
  *
- * Quiet Remote v43 — multiple TVs, Cast volume,
+ * Quiet Remote v43 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -216,7 +216,7 @@ import javax.net.ssl.X509TrustManager;
  * version, drawn keyboard icon, REMOVE THIS TV, whole area
  * above the buttons swipes + double-taps, double-tap Select).
  *
- * Quiet Remote v42 — multiple TVs, Cast volume,
+ * Quiet Remote v42 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -242,7 +242,7 @@ import javax.net.ssl.X509TrustManager;
  * THIS TV, whole area above the buttons swipes + double-taps,
  * double-tap Select).
  *
- * Quiet Remote v41 — multiple TVs, Cast volume,
+ * Quiet Remote v41 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -268,7 +268,7 @@ import javax.net.ssl.X509TrustManager;
  * version, drawn keyboard icon, REMOVE THIS TV, whole area
  * above the buttons swipes + double-taps, double-tap Select).
  *
- * Quiet Remote v40 — multiple TVs, Cast volume,
+ * Quiet Remote v40 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -287,7 +287,7 @@ import javax.net.ssl.X509TrustManager;
  * icon, REMOVE THIS TV, whole area above the buttons swipes
  * + double-taps, double-tap Select).
  *
- * Quiet Remote v39 — multiple TVs, Cast volume,
+ * Quiet Remote v39 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -303,7 +303,7 @@ import javax.net.ssl.X509TrustManager;
  * THIS TV, whole area above the buttons swipes + double-taps,
  * double-tap Select).
  *
- * Quiet Remote v38 — multiple TVs, Cast volume,
+ * Quiet Remote v38 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -320,7 +320,7 @@ import javax.net.ssl.X509TrustManager;
  * behaviour is kept (REMOVE THIS TV, whole area above the
  * buttons swipes + double-taps, double-tap Select).
  *
- * Quiet Remote v37 — multiple TVs, Cast volume,
+ * Quiet Remote v37 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -338,7 +338,7 @@ import javax.net.ssl.X509TrustManager;
  * is kept (whole area above the buttons swipes + double-taps,
  * pad down in the thumb zone, double-tap Select).
  *
- * Quiet Remote v36 — multiple TVs, Cast volume,
+ * Quiet Remote v36 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -356,7 +356,7 @@ import javax.net.ssl.X509TrustManager;
  * All v35 behaviour is kept (pad down in the thumb zone,
  * Settings Refresh lists found TVs, double-tap Select).
  *
- * Quiet Remote v35 — multiple TVs, Cast volume,
+ * Quiet Remote v35 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -374,7 +374,7 @@ import javax.net.ssl.X509TrustManager;
  * to the bottom. All v34 behaviour is kept (Settings Refresh
  * lists found TVs, bigger swipe area, double-tap Select).
  *
- * Quiet Remote v34 — multiple TVs, Cast volume,
+ * Quiet Remote v34 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -391,7 +391,7 @@ import javax.net.ssl.X509TrustManager;
  * behaviour is kept (bigger swipe area, buttons at the bottom,
  * double-tap Select).
  *
- * Quiet Remote v33 — multiple TVs, Cast volume,
+ * Quiet Remote v33 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -405,7 +405,7 @@ import javax.net.ssl.X509TrustManager;
  * ring still counts. All v32 behaviour is kept (buttons at
  * the bottom, double-tap Select, everything else v31/v30/v29).
  *
- * Quiet Remote v32 — multiple TVs, Cast volume,
+ * Quiet Remote v32 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -420,7 +420,7 @@ import javax.net.ssl.X509TrustManager;
  * a finger reaches a button. All v31 behaviour is kept
  * (double-tap Select, everything else v30/v29).
  *
- * Quiet Remote v31 — multiple TVs, Cast volume,
+ * Quiet Remote v31 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -435,7 +435,7 @@ import javax.net.ssl.X509TrustManager;
  * reads "Swipe to move / Double-tap to select". All v30
  * behaviour is kept (Q icon, everything else v29).
  *
- * Quiet Remote v27 — multiple TVs, Cast volume,
+ * Quiet Remote v27 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -458,7 +458,7 @@ import javax.net.ssl.X509TrustManager;
  * behaviour is kept (stuck-busy fix, PAIR messages, dimmed
  * disabled PAIR).
  *
- * Quiet Remote v25 — multiple TVs, Cast volume,
+ * Quiet Remote v25 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + Netflix + sleep timer + picture
  * mode, phone keyboard.
@@ -474,7 +474,7 @@ import javax.net.ssl.X509TrustManager;
  * REW / Play / FF only), so nothing crowds on the test phone and the
  * remote still fits on one screen. All v24 behaviour is kept.
  *
- * Quiet Remote v15 — multiple TVs, Cast volume,
+ * Quiet Remote v15 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + sleep timer + picture mode,
  * phone keyboard.
@@ -496,7 +496,7 @@ import javax.net.ssl.X509TrustManager;
  * the main screen still fits with no scrolling. All v14
  * behaviour is kept.
  *
- * Quiet Remote v14 — multiple TVs, Cast volume,
+ * Quiet Remote v14 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute,
  * playback controls + YouTube + sleep timer + picture mode.
  *
@@ -523,7 +523,7 @@ import javax.net.ssl.X509TrustManager;
  * volume first, CC toggle, Inputs in Settings, no bottom text, no
  * scrolling, 2 TVs only.
  *
- * Quiet Remote v13 — multiple TVs, Cast volume,
+ * Quiet Remote v13 — 2 TVs (Bedroom, Den), Cast volume,
  * silver Apple Remote body, drawn power symbol, speaker = mute.
  *
  * v13 changes (the user, 2026-11-20): "Make it look like the apple
@@ -930,6 +930,10 @@ public class MainActivity extends Activity {
     private TextView checkUpdatesTitleView;
     private Button checkUpdatesOnButton;
     private Button checkUpdatesOffButton;
+    // v48.4: manual check in Settings — status line + Download
+    // button, shown only by the manual check, never by startup.
+    private TextView manualCheckStatusView;
+    private Button manualDownloadButton;
     // v48.1: the download's completion opens the installer.
     // Registered only when a download starts, unregistered
     // in onReceive — if the app is gone before the download
@@ -946,6 +950,11 @@ public class MainActivity extends Activity {
                 if (updateDownloadButton != null) {
                     updateDownloadButton.setText("Download");
                     updateDownloadButton.setEnabled(true);
+                }
+                // v48.4: same for the manual button in Settings.
+                if (manualDownloadButton != null && updateTag != null) {
+                    manualDownloadButton.setText("DOWNLOAD " + updateTag);
+                    manualDownloadButton.setEnabled(true);
                 }
                 return;
             }
@@ -1088,9 +1097,10 @@ public class MainActivity extends Activity {
     private List<Button> sleepButtons;
     // v48.23: CC + sleep timer on the main screen too — two quiet
     // text controls under the volume row, repainted from the same
-    // per-TV caches as Settings (updateMainCcSleepUi).
+    // per-TV caches as Settings (updateMainCcSleepInputUi).
     private Button mainCcButton;
     private Button mainSleepButton;
+    private Button mainInputButton;
     private List<Button> pictureButtons;
     // --- v14: Play/Pause is ONE toggle button on the main screen.
     // Its label says what the NEXT tap sends: it starts as "Play",
@@ -1994,7 +2004,7 @@ public class MainActivity extends Activity {
         // timer too — repaint from the cache at once, then read
         // both fresh in the background (the same two fast single
         // reads Settings does on open).
-        updateMainCcSleepUi();
+        updateMainCcSleepInputUi();
         refreshCcState();
         refreshSleepState();
         resetInputUi();
@@ -2441,21 +2451,26 @@ public class MainActivity extends Activity {
 
     // ---------- v11: volume number inside the slider thumb ----------
     // Reference picture: speaker icon, black track, and the volume
-    // number inside a circle on the thumb ("73%"). The thumb is a
+    // number inside a circle on the thumb ("73"). The thumb is a
     // white circle with a dark ring and the black number centred in
     // it — no separate "Volume: —" label anywhere on the screen.
     // The track is white where filled and dark grey where not,
     // the dark-theme version of the reference's black/white track.
+    // v48.6: the thumb is 32 dp, not 48 — the user's screenshot showed
+    // the big circle dwarfing the row, and the number reads alone
+    // (no "%") at 14 sp.
     private static class VolumeThumbDrawable extends Drawable {
         private int level = -1; // -1 = unknown, shows a dash
         private final Paint circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final int sizePx;
+        private final float numberTextSizePx; // v48.6: fixed 14 sp
 
         VolumeThumbDrawable(Context ctx, int sizeDp) {
             float density = ctx.getResources().getDisplayMetrics().density;
             sizePx = Math.round(sizeDp * density);
+            numberTextSizePx = 14f * density;
             circlePaint.setColor(Color.WHITE);
             circlePaint.setStyle(Paint.Style.FILL);
             ringPaint.setColor(0xFF1C1C1E);
@@ -2486,9 +2501,10 @@ public class MainActivity extends Activity {
             float r = Math.min(b.width(), b.height()) / 2f - ringPaint.getStrokeWidth();
             canvas.drawCircle(cx, cy, r, circlePaint);
             canvas.drawCircle(cx, cy, r, ringPaint);
-            String t = level < 0 ? "-" : level + "%";
-            // Shrink the text until "100%" fits inside the circle.
-            float textSize = r * 0.72f;
+            String t = level < 0 ? "-" : String.valueOf(level);
+            // v48.6: number only, no "%" — start at 14 sp and shrink
+            // only until "100" fits inside the circle.
+            float textSize = numberTextSizePx;
             textPaint.setTextSize(textSize);
             while (textPaint.measureText(t) > r * 1.5f && textSize > 8f) {
                 textSize -= 1f;
@@ -4870,7 +4886,7 @@ public class MainActivity extends Activity {
         updateDlLp.leftMargin = dp(8);
         updateDownloadButton.setLayoutParams(updateDlLp);
         updateDownloadButton.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { downloadUpdate(); }
+            @Override public void onClick(View v) { downloadUpdate(updateDownloadButton); }
         });
         updateRow.addView(updateDownloadButton);
         Button updateDismissButton = settingsButton("Dismiss", 14);
@@ -5222,17 +5238,26 @@ public class MainActivity extends Activity {
         // the reference picture. v13: the track is black where
         // filled and mid-grey where not, on the silver body —
         // the dark version of the reference's black track.
-        volumeThumb = new VolumeThumbDrawable(this, 48);
+        // v48.6: 32 dp thumb, not 48 — the big circle dwarfed the
+        // row on the user's screenshot. Half is 16 dp, so the offset
+        // and the end padding are 16 dp too (the v48.11 fix, kept).
+        volumeThumb = new VolumeThumbDrawable(this, 32);
         volumeBar.setThumb(volumeThumb);
-        volumeBar.setThumbOffset(dp(24));
-        // v48.11: room for the 48 dp thumb at both ends — at
+        volumeBar.setThumbOffset(dp(16));
+        // v48.11: room for the thumb at both ends — at
         // 100% it was half cut off by the screen edge, and at
         // 0% it overlapped the speaker icon.
-        volumeBar.setPadding(dp(24), 0, dp(24), 0);
+        volumeBar.setPadding(dp(16), 0, dp(16), 0);
         volumeBar.setProgressTintList(
                 android.content.res.ColorStateList.valueOf(0xFF1C1C1E));
         volumeBar.setProgressBackgroundTintList(
                 android.content.res.ColorStateList.valueOf(0xFF9A9AA0));
+        // v48.6: thicker track — the default ~2 dp line was too
+        // thin next to the thumb. min/max height set the track
+        // thickness (the SeekBar height itself is still the
+        // thumb's 32 dp, so nothing is clipped).
+        volumeBar.setMinHeight(dp(5));
+        volumeBar.setMaxHeight(dp(5));
         volumeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                 // The thumb shows the number live, while dragging
@@ -5252,20 +5277,28 @@ public class MainActivity extends Activity {
         volumeRow.addView(volumeBar);
         controlsLayout.addView(volumeRow);
         // v48.23: CC + sleep timer on the main screen (the user) — they
-        // lived only in Settings. Two quiet text controls under
+        // lived only in Settings. v48.5: Input joins them in the
+        // empty bottom-right spot. Three quiet text controls under
         // the volume row, same 11 sp dimmed text as Goodnight
         // (v48.22), not big pills: they must not compete with
         // the TV pills or the pad. The spacer above the touchpad
         // absorbs the extra row and the remote still fits on one
-        // screen. Both follow the selected TV (updateMainCcSleepUi,
-        // called from updateCcUi/updateSleepUi/selectTv) and both
-        // drive the same Settings code — setCcTo / setSleepTimerTo
-        // — so the two places can never disagree. They stay live
-        // in cast mode like Goodnight: they talk to the selected
-        // TV, not the pad, so setCastMode does not dim them.
+        // screen. All three follow the selected TV
+        // (updateMainCcSleepInputUi, called from
+        // updateCcUi/updateSleepUi/selectTv) and CC/Sleep drive
+        // the same Settings code — setCcTo / setSleepTimerTo —
+        // so the two places can never disagree. Input steps to
+        // the next input in the TV's list (stepInput, via the
+        // same setInputTo Settings uses). They stay live in cast
+        // mode like Goodnight: they talk to the selected TV, not
+        // the pad, so setCastMode does not dim them.
         LinearLayout ccSleepRow = new LinearLayout(this);
         ccSleepRow.setOrientation(LinearLayout.HORIZONTAL);
-        ccSleepRow.setPadding(0, dp(8), 0, 0);
+        // v48.6: 16 dp above the toggles, not 8 — the user's screenshot
+        // showed them cramped at the bottom. The spacer above the
+        // pad absorbs it (the pad is untouched), and the smaller
+        // 32 dp thumb gives the volume row back 16 dp anyway.
+        ccSleepRow.setPadding(0, dp(16), 0, 0);
         mainCcButton = quietTextButton("CC: —");
         mainCcButton.setContentDescription("Closed captions — tap to toggle");
         mainCcButton.setOnClickListener(new View.OnClickListener() {
@@ -5291,7 +5324,21 @@ public class MainActivity extends Activity {
                 setSleepTimerTo(VizioApi.nextSleepTimerMinutes(cachedSleep[selectedIndex]));
             }
         });
+        LinearLayout.LayoutParams sleepLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        sleepLp.rightMargin = dp(16);
+        mainSleepButton.setLayoutParams(sleepLp);
         ccSleepRow.addView(mainSleepButton);
+        // v48.5: Input steps to the next input in the TV's list.
+        // Fixed label — the current input is never shown; tap
+        // until the TV shows the input you want.
+        mainInputButton = quietTextButton("Next input");
+        mainInputButton.setContentDescription("Next input — tap to step to the next input");
+        mainInputButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { stepInput(); }
+        });
+        ccSleepRow.addView(mainInputButton);
         controlsLayout.addView(ccSleepRow);
         // v18: no VOL − / VOL + buttons and no separate Mute
         // button — the speaker icon in the same row is the mute
@@ -5505,6 +5552,38 @@ public class MainActivity extends Activity {
         });
         checkUpdatesRow.addView(checkUpdatesOffButton);
         boxApp.addView(checkUpdatesRow);
+
+        // v48.4: manual check — same GitHub check as startup,
+        // but on demand: it runs even with the toggle off and
+        // ignores the dismissed tag, so a dismissed update can
+        // be offered again. The result shows here, in the box —
+        // the remote notice row is never shown by it.
+        Button manualCheckButton = settingsButton("CHECK FOR UPDATES NOW", 14);
+        manualCheckButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { manualCheckForUpdates(); }
+        });
+        boxApp.addView(manualCheckButton);
+        manualCheckStatusView = mutedText("", 14);
+        manualCheckStatusView.setVisibility(View.GONE);
+        boxApp.addView(manualCheckStatusView);
+        manualDownloadButton = settingsButton("DOWNLOAD", 14);
+        manualDownloadButton.setVisibility(View.GONE);
+        manualDownloadButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { downloadUpdate(manualDownloadButton); }
+        });
+        boxApp.addView(manualDownloadButton);
+
+        // v16: re-run first-time setup any time — lets a new
+        // user (or the user, testing setup on an already-paired
+        // phone) walk the WiFi → Find → Pair flow again. It
+        // never unpairs anything; paired TVs just show Paired ✓.
+        // v48.6 (the user): moved here from the This TV box — the
+        // last thing in App settings, version line still last.
+        Button setupAgainButton = settingsButton("RUN FIRST-TIME SETUP AGAIN", 15);
+        setupAgainButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showSetup(); }
+        });
+        boxApp.addView(setupAgainButton);
 
         // v48.3: the version line lives inside the App settings
         // box now, as its last line — the standalone footer
@@ -5738,16 +5817,6 @@ public class MainActivity extends Activity {
             }
         });
         boxThisTv.addView(removeButton);
-
-        // v16: re-run first-time setup any time — lets a new
-        // user (or the user, testing setup on an already-paired
-        // phone) walk the WiFi → Find → Pair flow again. It
-        // never unpairs anything; paired TVs just show Paired ✓.
-        Button setupAgainButton = settingsButton("RUN FIRST-TIME SETUP AGAIN", 15);
-        setupAgainButton.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { showSetup(); }
-        });
-        boxThisTv.addView(setupAgainButton);
 
         return scroll;
     }
@@ -6124,10 +6193,17 @@ public class MainActivity extends Activity {
     /** v48.1: once per launch, after the remote screen loads —
      *  ask GitHub for the latest release on a background thread
      *  and show the notice only when a newer version exists.
-     *  Any failure skips silently; startup never waits on it. */
-    private void maybeCheckForUpdates() {
-        if (updateCheckDone || !checkUpdatesOn()) return;
-        updateCheckDone = true;
+     *  Any failure skips silently; startup never waits on it.
+     *  v48.4: manual=true is the Settings button — the same
+     *  fetch, but it runs even with the toggle off, ignores
+     *  the dismissed tag, and reports in Settings instead of
+     *  the notice row. */
+    private void checkForUpdates(boolean manual) {
+        if (!manual) {
+            if (updateCheckDone || !checkUpdatesOn()) return;
+            updateCheckDone = true;
+        }
+        final boolean isManual = manual;
         runBg(new Runnable() {
             @Override public void run() {
                 String tag = null;
@@ -6152,14 +6228,86 @@ public class MainActivity extends Activity {
                 } catch (Exception ignored) {
                     // No network, timeout, bad JSON — silent skip.
                 }
-                if (tag == null || apkUrl == null) return;
-                if (!UpdateCheck.isNewerVersion(tag, appVersionName())) return;
-                if (prefs != null && tag.equals(prefs.getString(PREF_DISMISSED_UPDATE_TAG, null))) return;
+                if (tag == null || apkUrl == null) {
+                    if (isManual) showManualCheckFailed();
+                    return;
+                }
+                if (!UpdateCheck.isNewerVersion(tag, appVersionName())) {
+                    if (isManual) showManualCheckUpToDate();
+                    return;
+                }
+                // v48.4: the manual check ignores the dismissed tag.
+                if (!isManual && prefs != null && tag.equals(prefs.getString(PREF_DISMISSED_UPDATE_TAG, null))) return;
                 final String showTag = tag;
                 final String showUrl = apkUrl;
                 runOnUiThread(new Runnable() {
-                    @Override public void run() { showUpdateRow(showTag, showUrl); }
+                    @Override public void run() {
+                        if (isManual) showManualUpdateResult(showTag, showUrl);
+                        else showUpdateRow(showTag, showUrl);
+                    }
                 });
+            }
+        });
+    }
+
+    /** v48.1: the startup check — once per launch, toggle-gated. */
+    private void maybeCheckForUpdates() {
+        checkForUpdates(false);
+    }
+
+    /** v48.4: the Settings button — same check, on demand.
+     *  Runs even with the toggle off; ignores the dismissed
+     *  tag. Shows "Checking…" while the fetch runs. */
+    private void manualCheckForUpdates() {
+        if (manualCheckStatusView != null) {
+            manualCheckStatusView.setText("Checking…");
+            manualCheckStatusView.setVisibility(View.VISIBLE);
+        }
+        if (manualDownloadButton != null) manualDownloadButton.setVisibility(View.GONE);
+        checkForUpdates(true);
+    }
+
+    /** v48.4: the manual check found a newer release — status
+     *  line plus a Download button, all inside Settings. The
+     *  dismissed tag is NOT cleared: dismissing from the
+     *  notice again hides it on launch until the next manual
+     *  check. Runs on the UI thread (called from checkForUpdates'
+     *  runOnUiThread). */
+    private void showManualUpdateResult(String tag, String apkUrl) {
+        if (manualCheckStatusView == null || manualDownloadButton == null) return;
+        updateTag = tag;
+        updateApkUrl = apkUrl;
+        manualCheckStatusView.setText("Update available: " + tag);
+        manualCheckStatusView.setVisibility(View.VISIBLE);
+        manualDownloadButton.setText("DOWNLOAD " + tag);
+        manualDownloadButton.setEnabled(true);
+        manualDownloadButton.setVisibility(View.VISIBLE);
+    }
+
+    /** v48.4: the manual check found nothing newer. Called
+     *  from the background thread — posts to the UI thread. */
+    private void showManualCheckUpToDate() {
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                if (manualCheckStatusView == null) return;
+                manualCheckStatusView.setText("You're on the latest version.");
+                manualCheckStatusView.setVisibility(View.VISIBLE);
+                if (manualDownloadButton != null) manualDownloadButton.setVisibility(View.GONE);
+            }
+        });
+    }
+
+    /** v48.4: the manual check failed (no network, timeout,
+     *  bad response). The button stays usable for a retry.
+     *  Called from the background thread — posts to the UI
+     *  thread. */
+    private void showManualCheckFailed() {
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                if (manualCheckStatusView == null) return;
+                manualCheckStatusView.setText("Couldn't check for updates — try again later.");
+                manualCheckStatusView.setVisibility(View.VISIBLE);
+                if (manualDownloadButton != null) manualDownloadButton.setVisibility(View.GONE);
             }
         });
     }
@@ -6192,8 +6340,10 @@ public class MainActivity extends Activity {
 
     /** v48.1: download the APK with DownloadManager and open
      *  the installer when it finishes (see
-     *  updateDownloadReceiver). */
-    private void downloadUpdate() {
+     *  updateDownloadReceiver). v48.4: the button to paint is
+     *  the caller's — the notice row's Download button, or
+     *  the manual one in Settings. */
+    private void downloadUpdate(Button button) {
         if (updateApkUrl == null || updateTag == null) return;
         try {
             DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
@@ -6205,8 +6355,8 @@ public class MainActivity extends Activity {
             req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,
                     "Quiet-Remote-" + updateTag + ".apk");
             updateDownloadId = dm.enqueue(req);
-            updateDownloadButton.setText("Downloading…");
-            updateDownloadButton.setEnabled(false);
+            button.setText("Downloading…");
+            button.setEnabled(false);
             registerReceiver(updateDownloadReceiver,
                     new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
         } catch (Exception ignored) {
@@ -6231,7 +6381,7 @@ public class MainActivity extends Activity {
         // and every time Settings opens.
         updatePerTvTitle();
         // v48.23: the main-screen controls show the same state.
-        updateMainCcSleepUi();
+        updateMainCcSleepInputUi();
         if (ccStateView == null || ccOnButton == null || ccOffButton == null) return;
         if (!hasTv()) {
             ccStateView.setText("Closed Captions: find a TV in setup first");
@@ -6341,7 +6491,7 @@ public class MainActivity extends Activity {
      *  cache, so the current choice is black with a checkmark. */
     private void updateSleepUi() {
         // v48.23: the main-screen controls show the same state.
-        updateMainCcSleepUi();
+        updateMainCcSleepInputUi();
         if (sleepStateView == null) return;
         if (!hasTv()) {
             sleepStateView.setText("Sleep Timer: find a TV in setup first");
@@ -6374,14 +6524,17 @@ public class MainActivity extends Activity {
      *  the same per-TV caches Settings uses — same text, same
      *  state, no network. Called from updateCcUi/updateSleepUi
      *  (every set and read-back) and from selectTv (TV switch),
-     *  so the two places always agree. */
-    private void updateMainCcSleepUi() {
-        if (mainCcButton == null || mainSleepButton == null) return;
+     *  so the two places always agree. v48.5: Input joins them —
+     *  a fixed "Next input" label, never the current input; the
+     *  updater only enables/disables it. */
+    private void updateMainCcSleepInputUi() {
+        if (mainCcButton == null || mainSleepButton == null || mainInputButton == null) return;
         if (!hasTv()) {
             mainCcButton.setText("CC: —");
             mainCcButton.setEnabled(false);
             mainSleepButton.setText("Sleep: —");
             mainSleepButton.setEnabled(false);
+            mainInputButton.setEnabled(false);
             return;
         }
         boolean paired = authToken != null && !authToken.isEmpty();
@@ -6391,6 +6544,7 @@ public class MainActivity extends Activity {
         int s = cachedSleep[selectedIndex];
         mainSleepButton.setText(s < 0 ? "Sleep: —" : "Sleep: " + sleepLabel(s));
         mainSleepButton.setEnabled(paired);
+        mainInputButton.setEnabled(paired);
     }
 
     /** v20: short label for a sleep-timer option button. */
@@ -7251,6 +7405,8 @@ public class MainActivity extends Activity {
         // switch failed).
         cachedInput[tvIndex] = inputName;
         updateInputsUi();
+        // v48.5: the main-screen Input label moves at once too.
+        updateMainCcSleepInputUi();
         runBg(new Runnable() {
             @Override public void run() {
                 boolean ok = VizioApi.setInput(ip, auth, inputName);
@@ -7265,11 +7421,50 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** v48.5: step the selected TV to the next input in its list
+     *  (wrapping), then read the current input back — the label
+     *  always shows the TV's actual state, never a guess. The
+     *  cycle is computed from the TV's own inputs list and set
+     *  by name (setInputTo, the same path Settings uses): the
+     *  SmartCast API has no native "next" endpoint, so pyvizio's
+     *  next-input is this same list + current + set-by-name.
+     *  Unknown current input refreshes first (CC pattern); a
+     *  missing list is fetched on demand, then the step runs. */
+    private void stepInput() {
+        if (!hasTv()) return;
+        if (authToken == null || currentIp == null) {
+            toast("Pair " + roomName() + " first.");
+            return;
+        }
+        if (cachedInput[selectedIndex] == null) {
+            refreshFastStateFor(selectedIndex, currentIp, authToken);
+            return;
+        }
+        List<VizioApi.Item> list = inputsCache[selectedIndex];
+        if (list == null) { loadInputs(true); return; }
+        if (list.isEmpty()) {
+            toast("Inputs not listed by this TV.");
+            return;
+        }
+        String next = VizioApi.nextInput(cachedInput[selectedIndex], inputNames(list));
+        if (next == null) return;
+        setInputTo(next);
+    }
+
+    /** Input names from the TV's inputs list, in the TV's order. */
+    private static List<String> inputNames(List<VizioApi.Item> items) {
+        List<String> names = new ArrayList<String>();
+        for (VizioApi.Item in : items) {
+            if (in.name != null) names.add(in.name);
+        }
+        return names;
+    }
+
     /**
      * v6 fast state — the ONLY automatic state read in the app.
      * Fetches just the four fast single-value reads from the probe
      * (power 255 ms, volume 331 ms, mute 243 ms, current input
-     * 300 ms on the bedroom TV) — about 1 s total, and the
+     * 300 ms on the bedroom bedroom TV) — about 1 s total, and the
      * cached values are already on screen before it returns (see
      * showCachedState). It NEVER fetches a full settings list and
      * NEVER fetches the input list: that is on-demand only
@@ -7354,6 +7549,8 @@ public class MainActivity extends Activity {
                         // highlight from it (and revert an
                         // optimistic switch that failed).
                         updateInputsUi();
+                        // v48.5: the main-screen Input label too.
+                        updateMainCcSleepInputUi();
                     }
                 });
             }
@@ -7432,7 +7629,13 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void loadInputs() {
+    private void loadInputs() { loadInputs(false); }
+
+    /** Fetch the inputs list on demand, then cache it. v48.5:
+     *  stepAfter runs the Input stepper once the list lands, so
+     *  a tap on the main-screen Input control works even before
+     *  SHOW INPUTS was ever tapped. */
+    private void loadInputs(final boolean stepAfter) {
         if (authToken == null || currentIp == null) {
             toast("Pair " + roomName() + " first.");
             return;
@@ -7454,6 +7657,7 @@ public class MainActivity extends Activity {
                         if (tvIndex != selectedIndex) return;
                         inputLayout.removeAllViews();
                         renderInputs(inputs);
+                        if (stepAfter) stepInput();
                     }
                 });
             }

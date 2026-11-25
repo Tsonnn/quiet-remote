@@ -46,7 +46,7 @@ import javax.net.ssl.X509TrustManager;
  *    Up is 3/3 — the TV sources agree it is 3/8, so 3/8 is used;
  *    (b) Home 4/3 is single-source (kbrown01); issue #8 says Nav 15
  *    and 16 also go to the home/launch page, so if Home does nothing
- *    on the bedroom TV, try 4/15 next. the user's live test is the check.
+ *    on the user's bedroom TV, try 4/15 next. the user's live test is the check.
  *  - Reads/writes go through /menu_native/dynamic/tv_settings/... and
  *    return ITEMS[{NAME, CNAME, VALUE, HASHVAL}]. Writes need a fresh
  *    HASHVAL from a GET first ("you must GET before PUT").
@@ -165,7 +165,7 @@ public final class VizioApi {
         return isSuccess(sendKey(ip, auth, TEXT_CODESET, TEXT_BACKSPACE_CODE));
     }
 
-    /** v6 speed policy (probe 2026-11-20 10:05 PT, bedroom TV):
+    /** v6 speed policy (probe 2026-11-20 10:05 PT, bedroom bedroom TV):
      *  full settings lists are SLOW — audio list 4,362 ms, picture
      *  list 3,868 ms, channels list 2,047 ms, system list 1,636 ms,
      *  closed-captions list 1,490 ms, input list 1,178 ms — while
@@ -246,7 +246,7 @@ public final class VizioApi {
     public static final int[] SLEEP_TIMER_OPTIONS_MIN = {0, 30, 60, 90, 120};
 
     /** Full-list paths v6 never fetches automatically (probe
-     *  timings in ms on the bedroom TV, 2026-11-20). */
+     *  timings in ms on the bedroom bedroom TV, 2026-11-20). */
     public static final String[] SLOW_LIST_PATHS = {
             "/menu_native/dynamic/tv_settings/audio",           // 4,362 ms
             "/menu_native/dynamic/tv_settings/picture",         // 3,868 ms
@@ -318,6 +318,21 @@ public final class VizioApi {
         return null;
     }
 
+    /** Next input in the cycle, wrapping to the first input.
+     *  Pure, unit-tested. The list is the TV's own inputs list
+     *  (getInputs): cycling covers every input, plugged in or
+     *  not, exactly like the remote's INPUT key. A current input
+     *  that is not in the list (SMARTCAST when the list does not
+     *  carry it) steps to the first input. A null current or an
+     *  empty/null list returns null so the caller refreshes
+     *  first instead of guessing. */
+    public static String nextInput(String current, List<String> inputs) {
+        if (current == null || inputs == null || inputs.isEmpty()) return null;
+        int i = inputs.indexOf(current);
+        if (i < 0) return inputs.get(0);
+        return inputs.get((i + 1) % inputs.size());
+    }
+
     /** "On" / "Off" / "1" / "0" / "true" / "false" -> Boolean, null
      *  for anything else. Shared by the mute and closed-captions
      *  single reads — both reply with On/Off strings. */
@@ -357,7 +372,7 @@ public final class VizioApi {
      *  tries with 400 ms settles between them, so a big move timed
      *  out before it got there. v8 therefore makes FAST STEPPING
      *  the main path: one quick absolute try (it sometimes lands
-     *  on the bedroom TV), then, if it does not land, step
+     *  on the bedroom bedroom TV), then, if it does not land, step
      *  with the volume keys back-to-back — no settle wait, no
      *  read-back between steps, up to the full 0–100 range — and
      *  only ONE final volume read at the end to confirm. No popup
@@ -541,7 +556,7 @@ public final class VizioApi {
      *  settings GET body. Pure, unit-tested. Returns null when the
      *  body has no such item — the caller keeps the old name.
      *  v29: older firmware has no "TV Name" item at all — the
-     *  The living-room TV's system list (probe 2026-11-20) carries its name
+     *  living-room TV's system list (probe 2026-11-20) carries its name
      *  under "Display Name" = "Den", and that is why the
      *  post-pairing rename never fired for it and its pill stayed
      *  the model. Prefer "TV Name", fall back to "Display Name"
