@@ -1,6 +1,6 @@
 # Quiet Remote — User Manual
 
-**Draft — for version 48.6.** Quiet Remote is a free Android remote for Vizio SmartCast TVs. No ads, no account, no login, no cloud, no monthly fee. Your phone talks to your TV directly over your home WiFi.
+**Draft — for version 48.7.** Quiet Remote is a free Android remote for Vizio SmartCast TVs. No ads, no account, no login, no cloud, no monthly fee. Your phone talks to your TV directly over your home WiFi.
 
 ## To check on the live app
 
@@ -119,7 +119,7 @@ The big black circle is the touchpad. It sits just above the buttons, at the bot
 
 ### Captions, sleep timer, and input on the main screen
 
-Under the volume row, three quiet text controls follow the selected TV: **CC** turns closed captions on or off, **Sleep** steps the sleep timer through Off, 30, 60, 90, then 120 minutes, then back to Off, and **Input** reads "Next input" — tap it to step to the next input, and keep tapping until the input you want appears. It cycles through every input, including ones with nothing plugged in (so a tap can land on a blank screen, just like the INPUT button on the physical remote), and wraps back to the start. CC and Sleep do the same as the matching items in Settings.
+Under the volume row, three quiet text controls follow the selected TV: **CC** turns closed captions on or off, **Sleep** steps the sleep timer through Off, 30, 60, 90, then 120 minutes, then back to Off, and **Input** reads "Next input" — it sends the INPUT key on the TV remote. Tap it once and the input list opens on the TV with the current input highlighted; tap again to move down one, and keep tapping until the input you want is highlighted. Then press Select (double-tap the touchpad, or the touchpad's centre button) to switch at once, or just wait 5 seconds and the highlighted input switches by itself. The cycle follows the TV's own list — Vizio home, Airplay, Watchfree+, Antenna, Hdmi1, Hdmi2, Comp — and wraps back to the start. Airplay and Watchfree+ open apps. If Hdmi1, Hdmi2 or Comp has nothing plugged in, the TV returns to Vizio home by itself after 45 seconds; you can also hide them from the TV menu to shorten the cycle. CC and Sleep do the same as the matching items in Settings.
 
 ### Casting — the mini-player strip
 

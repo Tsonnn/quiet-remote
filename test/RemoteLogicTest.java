@@ -588,17 +588,6 @@ public class RemoteLogicTest {
         check("CC toggle off -> on", Boolean.TRUE.equals(VizioApi.ccToggleTarget(0)));
         check("CC toggle on -> off", Boolean.FALSE.equals(VizioApi.ccToggleTarget(1)));
         check("CC toggle unknown -> null", VizioApi.ccToggleTarget(-1) == null);
-        // v48.5: next input in the cycle, wrapping to the first.
-        List<String> three = Arrays.asList("HDMI-1", "HDMI-2", "COMP");
-        check("next input middle -> next", "HDMI-2".equals(VizioApi.nextInput("HDMI-1", three)));
-        check("next input last -> first", "HDMI-1".equals(VizioApi.nextInput("COMP", three)));
-        check("next input current not in list -> first", "HDMI-1".equals(VizioApi.nextInput("SMARTCAST", three)));
-        check("next input SMARTCAST in list -> next", "HDMI-2".equals(VizioApi.nextInput("SMARTCAST", Arrays.asList("HDMI-1", "SMARTCAST", "HDMI-2"))));
-        check("next input HDMI-1 -> SMARTCAST", "SMARTCAST".equals(VizioApi.nextInput("HDMI-1", Arrays.asList("HDMI-1", "SMARTCAST"))));
-        check("next input single input wraps to itself", "HDMI-1".equals(VizioApi.nextInput("HDMI-1", Arrays.asList("HDMI-1"))));
-        check("next input empty list -> null", VizioApi.nextInput("HDMI-1", new ArrayList<String>()) == null);
-        check("next input null list -> null", VizioApi.nextInput("HDMI-1", null) == null);
-        check("next input null current -> null", VizioApi.nextInput(null, three) == null);
 
         System.out.println("\n" + passed + " passed, " + failed + " failed");
         if (failed > 0) System.exit(1);

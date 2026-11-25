@@ -1,6 +1,6 @@
 # Quiet Remote
 
-**Download the app: [Quiet-Remote-v48.6.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.6/Quiet-Remote-v48.6.apk)** — tap to download, then open it to install. Free, no ads, no account.
+**Download the app: [Quiet-Remote-v48.7.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.7/Quiet-Remote-v48.7.apk)** — tap to download, then open it to install. Free, no ads, no account.
 
 ## Quick start
 
@@ -65,9 +65,11 @@ TV directly over your home WiFi.
 - **Closed captions, sleep timer, and input, on the main screen.** Three
   quiet controls under the remote that follow the selected TV — the
   same per-TV settings as in Settings, plus a "Next input" button:
-  tap it to step to the next input, and keep tapping until the input
-  you want appears. It cycles every input, including ones with
-  nothing plugged in, and wraps back to the start.
+  it sends the TV remote's own INPUT key. Tap once and the input
+  list opens on the TV with the current input highlighted; tap again
+  to move down one, and keep tapping until the input you want is
+  highlighted. Then press Select to switch at once, or just wait
+  5 seconds and it switches by itself.
 - **It picks the TV that is on.** On launch, when more than one TV
   is paired, the app selects the TV that is on. Your own tap always
   wins — the app never overrides a TV you picked.
@@ -105,7 +107,7 @@ TV directly over your home WiFi.
 
 ## Install
 
-1. Download `Quiet-Remote-v48.6.apk` from the
+1. Download `Quiet-Remote-v48.7.apk` from the
    [latest release](../../releases/latest).
 2. On your phone, allow installing from unknown sources for your
    browser or file manager, then open the APK to install it.
@@ -163,7 +165,7 @@ android-34, and JDK 17. Edit the `SDK` and `JAVA_HOME` paths at the
 top of `build-apk.sh` if yours are elsewhere.
 
 ```sh
-./build-apk.sh                # produces Quiet-Remote-v48.6.apk
+./build-apk.sh                # produces Quiet-Remote-v48.7.apk
 ./build-apk.sh my-build.apk   # custom output name
 ```
 

@@ -992,6 +992,33 @@ public class MainActivity extends Activity {
             maybeBufferingSkipAd(st);
         }
     };
+    // v48.7: Next input is the remote's own INPUT key now —
+    // the v48.6 set-by-name step failed live, so the TV
+    // owns the cycle. The switch only lands 5 s after the
+    // last tap (or at once on Select), so the re-read waits
+    // ~6 s after the LAST tap. Debounced: each new tap
+    // cancels and re-posts. Cancelled wherever the
+    // buffering second send stops (strip close, Settings,
+    // setup, onPause, onDestroy).
+    private static final int INPUT_REREAD_DELAY_MS = 6000;
+    private int inputRereadTvIndex;
+    private String inputRereadIp;
+    private String inputRereadAuth;
+    private final Runnable inputReread = new Runnable() {
+        @Override public void run() {
+            refreshFastStateFor(inputRereadTvIndex, inputRereadIp, inputRereadAuth);
+        }
+    };
+    private void scheduleInputReread() {
+        scanRetryHandler.removeCallbacks(inputReread);
+        inputRereadTvIndex = selectedIndex;
+        inputRereadIp = currentIp;
+        inputRereadAuth = authToken;
+        scanRetryHandler.postDelayed(inputReread, INPUT_REREAD_DELAY_MS);
+    }
+    private void stopInputReread() {
+        scanRetryHandler.removeCallbacks(inputReread);
+    }
     // v48.10: casting TO a TV — a cast session is a state of
     // that TV, not a separate device. One flag per TV (grown
     // with the other per-TV slots in growSlots); the pill
@@ -1669,6 +1696,8 @@ public class MainActivity extends Activity {
         stopAdCountdownTicker();
         // v48.20: the delayed buffering second send stops with it.
         stopBufferingSkipSecondSend();
+        // v48.7: the delayed input re-read stops with it too.
+        stopInputReread();
         // v48.10: the poll was the dongle strip's — restart
         // it as the TV watch, so a cast to a TV is still
         // found after leaving Chromecast mode.
@@ -3469,6 +3498,8 @@ public class MainActivity extends Activity {
         stopAdCountdownTicker();
         // v48.20: the delayed buffering second send stops too.
         stopBufferingSkipSecondSend();
+        // v48.7: the delayed input re-read stops with it too.
+        stopInputReread();
         remoteScroll.setVisibility(View.GONE);
         settingsScroll.setVisibility(View.VISIBLE);
         updateSettingsFoundUi();
@@ -3571,6 +3602,8 @@ public class MainActivity extends Activity {
         stopAdCountdownTicker();
         // v48.20: the delayed buffering second send stops too.
         stopBufferingSkipSecondSend();
+        // v48.7: the delayed input re-read stops with it too.
+        stopInputReread();
         setupScroll.setVisibility(View.VISIBLE);
         refreshWifiStatus();
         updateSetupWifiUi();
@@ -4491,6 +4524,8 @@ public class MainActivity extends Activity {
         // v48.20: the TV strip hid — the buffering episode ends with it.
         bufferingSkipGuard.reset();
         stopBufferingSkipSecondSend();
+        // v48.7: the delayed input re-read stops with it too.
+        stopInputReread();
     }
 
     /** One media command on the selected TV's cast session,
@@ -5287,9 +5322,10 @@ public class MainActivity extends Activity {
         // (updateMainCcSleepInputUi, called from
         // updateCcUi/updateSleepUi/selectTv) and CC/Sleep drive
         // the same Settings code — setCcTo / setSleepTimerTo —
-        // so the two places can never disagree. Input steps to
-        // the next input in the TV's list (stepInput, via the
-        // same setInputTo Settings uses). They stay live in cast
+        // so the two places can never disagree. Input sends the
+        // remote's own INPUT key (cycleInput, KEY_INPUT_CYCLE)
+        // — the TV owns the cycle; the v48.6 set-by-name step
+        // failed live. They stay live in cast
         // mode like Goodnight: they talk to the selected TV, not
         // the pad, so setCastMode does not dim them.
         LinearLayout ccSleepRow = new LinearLayout(this);
@@ -5330,13 +5366,14 @@ public class MainActivity extends Activity {
         sleepLp.rightMargin = dp(16);
         mainSleepButton.setLayoutParams(sleepLp);
         ccSleepRow.addView(mainSleepButton);
-        // v48.5: Input steps to the next input in the TV's list.
-        // Fixed label — the current input is never shown; tap
-        // until the TV shows the input you want.
+        // v48.7: Input sends the remote's own INPUT key
+        // (KEY_INPUT_CYCLE). Fixed label — the current input
+        // is never shown; tap to open the list, tap again to
+        // move down, Select switches at once.
         mainInputButton = quietTextButton("Next input");
-        mainInputButton.setContentDescription("Next input — tap to step to the next input");
+        mainInputButton.setContentDescription("Next input — tap to open the input list, tap again to move down");
         mainInputButton.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { stepInput(); }
+            @Override public void onClick(View v) { cycleInput(); }
         });
         ccSleepRow.addView(mainInputButton);
         controlsLayout.addView(ccSleepRow);
@@ -7026,6 +7063,15 @@ public class MainActivity extends Activity {
                                 refreshFastStateFor(tvIndex, ip, auth);
                             }
                         }, POWER_SETTLE_REREAD_MS);
+                    } else if (key == VizioApi.KEY_INPUT_CYCLE) {
+                        // v48.7: no immediate refresh — it would
+                        // read the old input (the switch only
+                        // lands 5 s after the last tap, or at
+                        // once on Select) and repaint the status
+                        // line, wiping the hint the tap just
+                        // set. The debounced 6 s re-read covers
+                        // it. Same disclosed deviation as the
+                        // v47.2 power toggle.
                     } else {
                         refreshFastStateFor(tvIndex, ip, auth);
                     }
@@ -7176,6 +7222,8 @@ public class MainActivity extends Activity {
         stopAdCountdownTicker();
         // v48.20: the delayed buffering second send must not either.
         stopBufferingSkipSecondSend();
+        // v48.7: the delayed input re-read stops with it too.
+        stopInputReread();
         for (CastVolume.Client c : castClients.values()) {
             if (c != null) c.close();
         }
@@ -7194,6 +7242,8 @@ public class MainActivity extends Activity {
         stopAdCountdownTicker();
         // v48.20: no delayed buffering second send in the background either.
         stopBufferingSkipSecondSend();
+        // v48.7: the delayed input re-read stops with it too.
+        stopInputReread();
     }
 
     @Override
@@ -7421,43 +7471,26 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** v48.5: step the selected TV to the next input in its list
-     *  (wrapping), then read the current input back — the label
-     *  always shows the TV's actual state, never a guess. The
-     *  cycle is computed from the TV's own inputs list and set
-     *  by name (setInputTo, the same path Settings uses): the
-     *  SmartCast API has no native "next" endpoint, so pyvizio's
-     *  next-input is this same list + current + set-by-name.
-     *  Unknown current input refreshes first (CC pattern); a
-     *  missing list is fetched on demand, then the step runs. */
-    private void stepInput() {
+    /** v48.7: Next input sends the remote's own INPUT key
+     *  (KEY_INPUT_CYCLE) — the v48.6 set-by-name step failed
+     *  live (the TV refused the switch), so the TV itself
+     *  owns the cycle now. One tap = one keypress: the
+     *  first opens the input list with the current input
+     *  highlighted, each further tap moves the highlight
+     *  down one. Select switches at once; waiting 5 s does
+     *  it by itself. The hint says so, and the debounced
+     *  6 s re-read (scheduleInputReread) learns the input
+     *  actually landed on — an immediate re-read would
+     *  report the old input. */
+    private void cycleInput() {
         if (!hasTv()) return;
         if (authToken == null || currentIp == null) {
             toast("Pair " + roomName() + " first.");
             return;
         }
-        if (cachedInput[selectedIndex] == null) {
-            refreshFastStateFor(selectedIndex, currentIp, authToken);
-            return;
-        }
-        List<VizioApi.Item> list = inputsCache[selectedIndex];
-        if (list == null) { loadInputs(true); return; }
-        if (list.isEmpty()) {
-            toast("Inputs not listed by this TV.");
-            return;
-        }
-        String next = VizioApi.nextInput(cachedInput[selectedIndex], inputNames(list));
-        if (next == null) return;
-        setInputTo(next);
-    }
-
-    /** Input names from the TV's inputs list, in the TV's order. */
-    private static List<String> inputNames(List<VizioApi.Item> items) {
-        List<String> names = new ArrayList<String>();
-        for (VizioApi.Item in : items) {
-            if (in.name != null) names.add(in.name);
-        }
-        return names;
+        sendKey(VizioApi.KEY_INPUT_CYCLE, "Input");
+        stateView.setText("Input list open — Select switches now, or wait 5 seconds.");
+        scheduleInputReread();
     }
 
     /**
@@ -7629,13 +7662,12 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void loadInputs() { loadInputs(false); }
-
-    /** Fetch the inputs list on demand, then cache it. v48.5:
-     *  stepAfter runs the Input stepper once the list lands, so
-     *  a tap on the main-screen Input control works even before
-     *  SHOW INPUTS was ever tapped. */
-    private void loadInputs(final boolean stepAfter) {
+    /** Fetch the inputs list on demand, then cache it — for
+     *  SHOW INPUTS in Settings only. (v48.5 let the main-screen
+     *  Input stepper run once the list landed; v48.7 removed
+     *  the stepper — Next input is the INPUT key now, so the
+     *  list is never needed on the main screen.) */
+    private void loadInputs() {
         if (authToken == null || currentIp == null) {
             toast("Pair " + roomName() + " first.");
             return;
@@ -7657,7 +7689,6 @@ public class MainActivity extends Activity {
                         if (tvIndex != selectedIndex) return;
                         inputLayout.removeAllViews();
                         renderInputs(inputs);
-                        if (stepAfter) stepInput();
                     }
                 });
             }

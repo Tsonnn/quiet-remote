@@ -318,21 +318,6 @@ public final class VizioApi {
         return null;
     }
 
-    /** Next input in the cycle, wrapping to the first input.
-     *  Pure, unit-tested. The list is the TV's own inputs list
-     *  (getInputs): cycling covers every input, plugged in or
-     *  not, exactly like the remote's INPUT key. A current input
-     *  that is not in the list (SMARTCAST when the list does not
-     *  carry it) steps to the first input. A null current or an
-     *  empty/null list returns null so the caller refreshes
-     *  first instead of guessing. */
-    public static String nextInput(String current, List<String> inputs) {
-        if (current == null || inputs == null || inputs.isEmpty()) return null;
-        int i = inputs.indexOf(current);
-        if (i < 0) return inputs.get(0);
-        return inputs.get((i + 1) % inputs.size());
-    }
-
     /** "On" / "Off" / "1" / "0" / "true" / "false" -> Boolean, null
      *  for anything else. Shared by the mute and closed-captions
      *  single reads — both reply with On/Off strings. */
