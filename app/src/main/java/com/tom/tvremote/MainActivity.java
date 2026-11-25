@@ -3,7 +3,11 @@ package com.tom.tvremote;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
@@ -15,10 +19,12 @@ import android.graphics.drawable.Drawable;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.Uri;
 import android.net.nsd.NsdManager;
 import android.net.nsd.NsdServiceInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -707,6 +713,11 @@ public class MainActivity extends Activity {
     private static final String PREFS = "tvremote";
     /** v48.15: auto-skip ads — on by default. */
     private static final String PREF_AUTO_SKIP_ADS = "auto_skip_ads";
+    /** v48.1: startup update check — on by default. */
+    private static final String PREF_CHECK_UPDATES = "check_for_updates";
+    /** v48.1: the update tag the user dismissed — a dismissed
+     *  tag never shows again, a newer tag does. */
+    private static final String PREF_DISMISSED_UPDATE_TAG = "dismissed_update_tag";
 
     private SharedPreferences prefs;
     // --- v21: the TV list is DYNAMIC and discovered-only. A fresh
@@ -904,6 +915,46 @@ public class MainActivity extends Activity {
     private Button castStripPlayPauseButton;
     private Button castStripStopButton;
     private Button castStripSkipAdButton;
+    // v48.1: startup update check — the notice row under the TV
+    // pills, shown only when a newer release exists. The check
+    // runs once per launch on a background thread; any failure
+    // (no network, timeout, bad JSON, no .apk asset) skips
+    // silently and nothing is shown.
+    private LinearLayout updateRow;
+    private TextView updateRowText;
+    private Button updateDownloadButton;
+    private boolean updateCheckDone = false;
+    private String updateTag;
+    private String updateApkUrl;
+    private long updateDownloadId = -1;
+    private TextView checkUpdatesTitleView;
+    private Button checkUpdatesOnButton;
+    private Button checkUpdatesOffButton;
+    // v48.1: the download's completion opens the installer.
+    // Registered only when a download starts, unregistered
+    // in onReceive — if the app is gone before the download
+    // finishes, the APK just sits in Downloads for a manual tap.
+    private final BroadcastReceiver updateDownloadReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+            if (id != updateDownloadId) return;
+            try { unregisterReceiver(this); } catch (Exception ignored) {}
+            DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            Uri uri = dm == null ? null : dm.getUriForDownloadedFile(id);
+            if (uri == null) {
+                // Download failed — leave the button up to try again.
+                if (updateDownloadButton != null) {
+                    updateDownloadButton.setText("Download");
+                    updateDownloadButton.setEnabled(true);
+                }
+                return;
+            }
+            Intent view = new Intent(Intent.ACTION_VIEW);
+            view.setDataAndType(uri, "application/vnd.android.package-archive");
+            view.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(view);
+        }
+    };
     private CastMedia.CastDevice selectedCast;
     // --- v48: Chromecasts. The inline strip on the remote
     // screen is the only control surface (v48.7: the separate
@@ -1160,6 +1211,9 @@ public class MainActivity extends Activity {
             // manual tap, no-op with fewer than two TVs.
             autoSelectTvOnLaunch();
             rediscover(true);
+            // v48.1: check for a newer release once per launch —
+            // background thread, silent on any failure.
+            maybeCheckForUpdates();
         }
     }
 
@@ -1448,7 +1502,7 @@ public class MainActivity extends Activity {
      *  the list changes (a scan tap adds a TV); the Settings cog
      *  and Power button at the end of the header are untouched.
      *  v29 (the user's screenshot): "Bedroom Twelve" wrapped to two
-     *  lines at 15 sp and grew taller than the Den TV pill
+     *  lines at 15 sp and grew taller than the living-room TV pill
      *  beside it — the pills never had the v18 nav-pill
      *  treatment (single-line). Both pills share one size,
      *  stepped down from the LONGEST name in the row so the row
@@ -1721,6 +1775,10 @@ public class MainActivity extends Activity {
         int shrinkPx = 0;
         if (castStrip != null && castStrip.getVisibility() == View.VISIBLE) {
             shrinkPx = castStrip.getHeight();
+        }
+        // v48.1: the update notice takes the same headroom while visible.
+        if (updateRow != null && updateRow.getVisibility() == View.VISIBLE) {
+            shrinkPx += updateRow.getHeight();
         }
         int diameterPx = Math.max(touchpadFullDiameterPx - shrinkPx, dp(240));
         touchpadSwipeRadiusPx = diameterPx / 2f + touchpadExpandPx;
@@ -3350,6 +3408,7 @@ public class MainActivity extends Activity {
         settingsScroll.setVisibility(View.VISIBLE);
         updateSettingsFoundUi();
         updateAutoSkipUi();
+        updateCheckUpdatesUi();
         refreshCcState();
         refreshSleepState();
         refreshPictureState();
@@ -4735,6 +4794,47 @@ public class MainActivity extends Activity {
         root.addView(remoteCastRow);
         rebuildRemoteCastRow();
 
+        // v48.1: update notice — a slim row under the TV pills,
+        // GONE until the startup check finds a newer release.
+        // Text + Download + Dismiss; the pad shrinks by its
+        // height while it is visible (see resizeTouchpad), so
+        // nothing is cut off at the bottom. Dismiss is a text
+        // button, not an "X" glyph — font glyphs are a tofu
+        // risk (v11).
+        updateRow = new LinearLayout(this);
+        updateRow.setOrientation(LinearLayout.HORIZONTAL);
+        updateRow.setGravity(Gravity.CENTER_VERTICAL);
+        updateRow.setPadding(0, dp(4), 0, 0);
+        updateRow.setVisibility(View.GONE);
+        updateRowText = new TextView(this);
+        updateRowText.setTextSize(14);
+        updateRowText.setTextColor(COL_TEXT);
+        updateRowText.setSingleLine(true);
+        updateRowText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams updateTextLp = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        updateRowText.setLayoutParams(updateTextLp);
+        updateRow.addView(updateRowText);
+        updateDownloadButton = settingsButton("Download", 14);
+        LinearLayout.LayoutParams updateDlLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        updateDlLp.leftMargin = dp(8);
+        updateDownloadButton.setLayoutParams(updateDlLp);
+        updateDownloadButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { downloadUpdate(); }
+        });
+        updateRow.addView(updateDownloadButton);
+        Button updateDismissButton = settingsButton("Dismiss", 14);
+        LinearLayout.LayoutParams updateDisLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        updateDisLp.leftMargin = dp(8);
+        updateDismissButton.setLayoutParams(updateDisLp);
+        updateDismissButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dismissUpdate(); }
+        });
+        updateRow.addView(updateDismissButton);
+        root.addView(updateRow);
+
         // v48.6: the inline mini-player strip — directly under
         // the Chromecast row, GONE until a Chromecast is
         // selected, so the remote is unchanged for TV-only
@@ -5298,6 +5398,37 @@ public class MainActivity extends Activity {
         });
         autoSkipRow.addView(autoSkipOffButton);
         root.addView(autoSkipRow);
+
+        // v48.1: check for updates — same On / Off option-button
+        // pattern as auto-skip. On by default; the check runs
+        // once per launch and only says something when a newer
+        // release exists. It contacts GitHub on startup — the
+        // one exception to the app's no-cloud rule.
+        checkUpdatesTitleView = settingsSectionTitle("Check for updates");
+        root.addView(checkUpdatesTitleView);
+        TextView checkUpdatesHelp = mutedText("On startup, check GitHub for a newer release and offer a one-tap download. Nothing is shown when you are up to date.", 14);
+        root.addView(checkUpdatesHelp);
+        LinearLayout checkUpdatesRow = new LinearLayout(this);
+        checkUpdatesRow.setOrientation(LinearLayout.HORIZONTAL);
+        checkUpdatesRow.setPadding(0, dp(8), 0, 0);
+        LinearLayout.LayoutParams checkUpdatesCell =
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        checkUpdatesOnButton = optionButton("On", false);
+        checkUpdatesOnButton.setLayoutParams(checkUpdatesCell);
+        checkUpdatesOnButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { setCheckUpdates(true); }
+        });
+        checkUpdatesRow.addView(checkUpdatesOnButton);
+        LinearLayout.LayoutParams checkUpdatesCell2 =
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        checkUpdatesCell2.leftMargin = dp(8);
+        checkUpdatesOffButton = optionButton("Off", false);
+        checkUpdatesOffButton.setLayoutParams(checkUpdatesCell2);
+        checkUpdatesOffButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { setCheckUpdates(false); }
+        });
+        checkUpdatesRow.addView(checkUpdatesOffButton);
+        root.addView(checkUpdatesRow);
 
         // --- Pairing ---
         root.addView(settingsSectionTitle("Pair with the TV"));
@@ -5887,6 +6018,122 @@ public class MainActivity extends Activity {
         autoSkipTitleView.setText("Auto-skip ads: " + (on ? "On" : "Off"));
         paintOption(autoSkipOnButton, "On", on);
         paintOption(autoSkipOffButton, "Off", !on);
+    }
+
+    // ---------- Update check (v48.1) ----------
+
+    /** v48.1: the Settings toggle — on by default. */
+    private boolean checkUpdatesOn() {
+        return prefs == null || prefs.getBoolean(PREF_CHECK_UPDATES, true);
+    }
+
+    /** v48.1: write the update-check switch, then repaint it. */
+    private void setCheckUpdates(boolean on) {
+        if (prefs != null) prefs.edit().putBoolean(PREF_CHECK_UPDATES, on).apply();
+        updateCheckUpdatesUi();
+    }
+
+    /** v48.1: repaint the update-check section from prefs. */
+    private void updateCheckUpdatesUi() {
+        if (checkUpdatesTitleView == null || checkUpdatesOnButton == null
+                || checkUpdatesOffButton == null) return;
+        boolean on = checkUpdatesOn();
+        checkUpdatesTitleView.setText("Check for updates: " + (on ? "On" : "Off"));
+        paintOption(checkUpdatesOnButton, "On", on);
+        paintOption(checkUpdatesOffButton, "Off", !on);
+    }
+
+    /** v48.1: once per launch, after the remote screen loads —
+     *  ask GitHub for the latest release on a background thread
+     *  and show the notice only when a newer version exists.
+     *  Any failure skips silently; startup never waits on it. */
+    private void maybeCheckForUpdates() {
+        if (updateCheckDone || !checkUpdatesOn()) return;
+        updateCheckDone = true;
+        runBg(new Runnable() {
+            @Override public void run() {
+                String tag = null;
+                String apkUrl = null;
+                try {
+                    HttpsURLConnection c = (HttpsURLConnection)
+                            new URL(UpdateCheck.LATEST_RELEASE_URL).openConnection();
+                    c.setConnectTimeout(5000);
+                    c.setReadTimeout(5000);
+                    c.setRequestProperty("Accept", "application/vnd.github+json");
+                    if (c.getResponseCode() == 200) {
+                        BufferedReader r = new BufferedReader(
+                                new InputStreamReader(c.getInputStream(), "UTF-8"));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = r.readLine()) != null) sb.append(line);
+                        r.close();
+                        String json = sb.toString();
+                        tag = UpdateCheck.parseLatestTag(json);
+                        apkUrl = UpdateCheck.parseApkDownloadUrl(json);
+                    }
+                } catch (Exception ignored) {
+                    // No network, timeout, bad JSON — silent skip.
+                }
+                if (tag == null || apkUrl == null) return;
+                if (!UpdateCheck.isNewerVersion(tag, appVersionName())) return;
+                if (prefs != null && tag.equals(prefs.getString(PREF_DISMISSED_UPDATE_TAG, null))) return;
+                final String showTag = tag;
+                final String showUrl = apkUrl;
+                runOnUiThread(new Runnable() {
+                    @Override public void run() { showUpdateRow(showTag, showUrl); }
+                });
+            }
+        });
+    }
+
+    /** v48.1: show the update notice under the TV pills. */
+    private void showUpdateRow(String tag, String apkUrl) {
+        if (updateRow == null || updateRowText == null || updateDownloadButton == null) return;
+        updateTag = tag;
+        updateApkUrl = apkUrl;
+        updateRowText.setText("Update available: " + tag);
+        updateDownloadButton.setText("Download");
+        updateDownloadButton.setEnabled(true);
+        updateRow.setVisibility(View.VISIBLE);
+        // v48.9 pattern: the row is laid out after this call
+        // returns — shrink the pad once its height is known.
+        updateRow.post(new Runnable() {
+            @Override public void run() { resizeTouchpad(); }
+        });
+    }
+
+    /** v48.1: hide the notice and remember the tag — it never
+     *  shows again, until a newer tag appears. */
+    private void dismissUpdate() {
+        if (updateTag != null && prefs != null) {
+            prefs.edit().putString(PREF_DISMISSED_UPDATE_TAG, updateTag).apply();
+        }
+        if (updateRow != null) updateRow.setVisibility(View.GONE);
+        resizeTouchpad();
+    }
+
+    /** v48.1: download the APK with DownloadManager and open
+     *  the installer when it finishes (see
+     *  updateDownloadReceiver). */
+    private void downloadUpdate() {
+        if (updateApkUrl == null || updateTag == null) return;
+        try {
+            DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            if (dm == null) return;
+            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(updateApkUrl));
+            req.setTitle("Quiet Remote " + updateTag);
+            req.setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,
+                    "Quiet-Remote-" + updateTag + ".apk");
+            updateDownloadId = dm.enqueue(req);
+            updateDownloadButton.setText("Downloading…");
+            updateDownloadButton.setEnabled(false);
+            registerReceiver(updateDownloadReceiver,
+                    new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+        } catch (Exception ignored) {
+            // Bad URL or no DownloadManager — leave the button as is.
+        }
     }
 
     private void updateCcUi() {

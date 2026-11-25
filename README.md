@@ -1,6 +1,6 @@
 # Quiet Remote
 
-**Download the app: [Quiet-Remote-v48.0.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.0/Quiet-Remote-v48.0.apk)** — tap to download, then open it to install. Free, no ads, no account.
+**Download the app: [Quiet-Remote-v48.2.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.2/Quiet-Remote-v48.2.apk)** — tap to download, then open it to install. Free, no ads, no account.
 
 ## Quick start
 
@@ -72,6 +72,11 @@ TV directly over your home WiFi.
   Take it off in Settings with REMOVE THIS TV.
 - **Settings shows the real version** at the bottom, so you can
   always tell which build you have.
+- **It checks for updates.** A "Check for updates" switch in
+  Settings (on by default). When the app starts, it quietly asks
+  GitHub for the latest release, and when a newer version exists it
+  shows a notice with a Download button — one tap downloads the
+  new version and opens the installer.
 - **The Q icon.** The app's mark is a black touchpad disc as a Q
   on silver, drawn by hand — no stock art, no VIZIO logo.
 - **Per-TV settings.** Sleep timer, picture mode, and closed captions
@@ -91,7 +96,7 @@ TV directly over your home WiFi.
 
 ## Install
 
-1. Download `Quiet-Remote-v48.0.apk` from the
+1. Download `Quiet-Remote-v48.2.apk` from the
    [latest release](../../releases/latest).
 2. On your phone, allow installing from unknown sources for your
    browser or file manager, then open the APK to install it.
@@ -149,7 +154,7 @@ android-34, and JDK 17. Edit the `SDK` and `JAVA_HOME` paths at the
 top of `build-apk.sh` if yours are elsewhere.
 
 ```sh
-./build-apk.sh                # produces TV-Remote-v48.0.apk
+./build-apk.sh                # produces TV-Remote-v48.2.apk
 ./build-apk.sh my-build.apk   # custom output name
 ```
 

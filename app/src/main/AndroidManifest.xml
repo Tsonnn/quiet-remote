@@ -5,6 +5,8 @@
     <!-- Local network only. Location is needed only to read the WiFi name
          (Android hides it otherwise) — nothing is tracked or sent. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v48.1: install the downloaded APK from the update check. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />

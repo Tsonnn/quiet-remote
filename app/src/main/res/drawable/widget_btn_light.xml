@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- v48.32: the widget's Vol - / + and Skip Ad buttons — the
+<!-- v48.2: the widget's Vol - / + and Skip Ad buttons — the
      same pill shape and 48 dp radius as the Power pill
-     drawables, in white, so all four buttons in the row read
-     as one balanced control bar. (The default Button
-     background is pill-like on Samsung but a fixed-radius
-     shape of its own, so it would not match the Power pill
-     at taller widget heights.) -->
+     drawables, in the silver tone from the app icon
+     (#DBDBDF to #C9C9CE, 1 px #B5B5BA edge so they still
+     read as buttons), so all four buttons in the row read
+     as one balanced control bar. Replaces the v48.32 white
+     pill (the user, 2026-11-24: tone the widget down, silver
+     like the app icon). -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#FFFFFF" />
+    <gradient
+        android:startColor="#DBDBDF"
+        android:endColor="#C9C9CE"
+        android:angle="270" />
+    <stroke
+        android:width="1px"
+        android:color="#B5B5BA" />
     <corners android:radius="48dp" />
 </shape>

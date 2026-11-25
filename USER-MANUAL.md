@@ -1,6 +1,6 @@
 # Quiet Remote — User Manual
 
-**Draft — for version 48.0.** Quiet Remote is a free Android remote for Vizio SmartCast TVs. No ads, no account, no login, no cloud, no monthly fee. Your phone talks to your TV directly over your home WiFi.
+**Draft — for version 48.2.** Quiet Remote is a free Android remote for Vizio SmartCast TVs. No ads, no account, no login, no cloud, no monthly fee. Your phone talks to your TV directly over your home WiFi.
 
 ## To check on the live app
 
@@ -158,6 +158,7 @@ Only plain letters, numbers and symbols are sent. Accents and emoji are left out
 - **Picture Mode** — pick the picture mode for the selected TV.
 - **Closed Captions** — On or Off for the selected TV.
 - **Auto-skip ads** — On (the default) or Off. When it is on, a skippable ad is skipped by itself while the cast strip is open.
+- **Check for updates** — On (the default) or Off. When it is on, the app checks GitHub for a newer version each time it starts up, and shows a notice with a Download button when one is available.
 - **SHOW INPUTS** — fetches the list of inputs from the TV, then tap one to switch to it.
 - **Refresh — find TVs again** — scans your WiFi again for TVs, and lists the ones it found under Refresh — tap one to add it, then pair it below. The status also names any TV it found that is not added yet.
 - **PAIR WITH THIS TV** — pair the selected TV (same as setup Step 3).
@@ -167,11 +168,18 @@ Only plain letters, numbers and symbols are sent. Accents and emoji are left out
 
 Sleep timer, picture mode, and closed captions are per TV — switching TVs shows that TV's own settings.
 
+## Checking for updates
+
+- **Check for updates** — On (the default) or Off, in Settings. When it is on, the app quietly asks GitHub whether a newer version exists each time it starts up.
+- When a newer version is available, a slim notice appears under the TV pills: "Update available: vX.Y", with **Download** and **Dismiss** buttons.
+- **Download** downloads the new version and opens the installer for you. **Dismiss** hides the notice until the next launch.
+- The check runs once per launch, on a background thread, so it never slows the remote down. If there is no network, or the check fails for any reason, nothing happens — the remote just works as normal.
+
 ## Your privacy
 
 - A fresh install starts with zero TVs. Nothing about any TV is baked into the app.
 - Your pairings and settings live only on your phone.
-- No account, no tracking, no data about you is collected or sent anywhere. The only thing that leaves your phone is the remote commands to your own TV, over your own WiFi.
+- No account, no tracking, no data about you is collected or sent anywhere. The only thing that leaves your phone is the remote commands to your own TV, over your own WiFi. The update check is the one exception: when "Check for updates" is on, the app asks GitHub's public release page whether a newer version exists — that request carries no information about you or your TVs.
 
 ## If something goes wrong
 
