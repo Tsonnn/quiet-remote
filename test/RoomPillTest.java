@@ -63,7 +63,7 @@ public class RoomPillTest {
         // even at the worst-case width.
         double totalShort = textWidthDp("Den TV", 15, 2.0) + 16;
         check(totalShort <= availWorst,
-                "\"Den TV\" at 15sp + 8dp padding fits the worst-case 108dp pill (needs "
+                "\"living-room TV\" at 15sp + 8dp padding fits the worst-case 108dp pill (needs "
                         + String.format("%.1f", totalShort) + "dp)");
 
         // "Den" (11 chars, over the 10-char step-down) fits
@@ -92,7 +92,7 @@ public class RoomPillTest {
         check(pillWidthDp(360, 5) == 96,
                 "5 pills at the worst-case width are 96dp each");
         check(textWidthDp("Den TV", 15, 1.875) + 16 <= 96,
-                "\"Den TV\" at 15sp fits whole in a 96dp pill (needs "
+                "\"living-room TV\" at 15sp fits whole in a 96dp pill (needs "
                         + String.format("%.1f", textWidthDp("Den TV", 15, 1.875) + 16)
                         + "dp) — short names stay readable at 5 TVs");
         check(textWidthDp("Bedroom Twelve", 12, 1.875) + 16 <= pillWidthDp(384, 2),

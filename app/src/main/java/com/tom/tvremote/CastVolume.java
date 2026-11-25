@@ -24,7 +24,7 @@ import javax.net.ssl.X509TrustManager;
  * unit-tested on a plain JVM (see test/CastVolumeTest.java).
  *
  * Why this exists (v9, the user, 2026-11-20): the SmartCast HTTP API
- * absolute volume set does not land on the living-room TV, so
+ * absolute volume set does not land on the living-room living-room TV, so
  * the slider fell back to key-stepping — one slow HTTPS round-trip
  * per step (~150–300 ms) — and the user's v8 test (10:56 PT) was still
  * "doing the single step after releasing slider". Google Home's

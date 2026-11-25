@@ -606,7 +606,7 @@ import javax.net.ssl.X509TrustManager;
  * screen, Cast volume first, touchpad swipe + tap, CC toggle in
  * Settings, 2 TVs only.
  *
- * Quiet Remote v9 — multiple TVs, Cast volume.
+ * Quiet Remote v9 — 2 TVs (Bedroom, Den), Cast volume.
  *
  * v9 changes (the user, 2026-11-20): the v8 fast stepping still did not
  * fix the living-room slider — the user's test (10:56 PT) was still
@@ -623,9 +623,9 @@ import javax.net.ssl.X509TrustManager;
  * the status line. VOL − / VOL + and Mute stay on SmartCast keys
  * — those work right away. Everything else is v8/v7 unchanged.
  *
- * Quiet Remote v8 — multiple TVs, volume slider fix.
+ * Quiet Remote v8 — 2 TVs (Bedroom, Den), volume slider fix.
  *
- * v8 changes (the user, 2026-11-20): the living-room TV slider
+ * v8 changes (the user, 2026-11-20): the living-room living-room TV slider
  * crept up one number at a time and stopped short, while a single
  * VOL + tap went up right away — the absolute volume set does not
  * land on that TV. v8 makes fast key-stepping the main slider
@@ -636,7 +636,7 @@ import javax.net.ssl.X509TrustManager;
  * speeds up (250 ms/step, then 80 ms/step), like a physical
  * remote. All v7 UI and v6 speed behaviour is kept.
  *
- * Quiet Remote v7 — multiple TVs, Apple Remote style UI.
+ * Quiet Remote v7 — 2 TVs (Bedroom, Den), Apple Remote style UI.
  *
  * v7 changes (the user, 2026-11-20): the layout was not really usable,
  * so the UI is redesigned minimalist, Apple Remote style, pleasing
@@ -650,7 +650,7 @@ import javax.net.ssl.X509TrustManager;
  * corners. All v6 speed behaviour is kept: fast single reads only,
  * cached state, inputs on demand.
  *
- * Quiet Remote v6 — multiple TVs, speed fix.
+ * Quiet Remote v6 — 2 TVs (Bedroom, Den), speed fix.
  *
  * v6 changes (the user, 2026-11-20): the bedroom probe (2026-11-20
  * 10:05 PT) showed why the remote felt sluggish — full settings
@@ -1077,6 +1077,8 @@ public class MainActivity extends Activity {
     private TextView sleepTitleView;
     private TextView pictureTitleView;
     private TextView inputsTitleView;
+    // v48.3: the Per-TV box header — names the TV it follows.
+    private TextView perTvTitleView;
     // v48.15: auto-skip ads — Settings On / Off, same option-button pattern as CC.
     private TextView autoSkipTitleView;
     private Button autoSkipOnButton;
@@ -2070,6 +2072,9 @@ public class MainActivity extends Activity {
     private static final int COL_SURFACE = 0xFF1C1C1E;
     private static final int COL_SURFACE2 = 0xFF1C1C1E;
     private static final int COL_PILL_OFF = 0xFFB9B9BE;
+    // v48.3: the Settings section boxes' outline — the silver
+    // edge from the app icon / widget pills.
+    private static final int COL_BOX_EDGE = 0xFFB5B5BA;
     private static final int COL_FIELD = 0xFFFFFFFF;
     private static final int COL_ON_DARK = 0xFFF5F5F7;
     // v13: no white touchpad circle any more — the black ring
@@ -2284,6 +2289,50 @@ public class MainActivity extends Activity {
         t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         t.setTextColor(COL_TEXT);
         t.setPadding(0, dp(26), 0, dp(10));
+        return t;
+    }
+
+    /** v48.3: a Settings section box — white card, 1 px silver
+     *  edge (#B5B5BA, the widget pills' edge), 12 dp corners.
+     *  One fresh instance per box — a Drawable cannot be the
+     *  background of two views at once. */
+    private android.graphics.drawable.GradientDrawable sectionBoxBg() {
+        android.graphics.drawable.GradientDrawable d =
+                new android.graphics.drawable.GradientDrawable();
+        d.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        d.setColor(COL_FIELD);
+        d.setCornerRadius(dp(12));
+        d.setStroke(dp(1), COL_BOX_EDGE);
+        return d;
+    }
+
+    /** v48.3: an empty outlined box, added to root in order —
+     *  the caller fills it. 14 dp of padding inside, 12 dp of
+     *  space above it, so the boxes read as separate cards. */
+    private LinearLayout sectionBox(LinearLayout root) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(sectionBoxBg());
+        box.setPadding(dp(14), dp(14), dp(14), dp(14));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(12);
+        box.setLayoutParams(lp);
+        root.addView(box);
+        return box;
+    }
+
+    /** v48.3: a box header — the same 18 sp bold heading as a
+     *  Settings section title, but no big top gap: the box
+     *  itself supplies the space above it. */
+    private TextView boxTitle(String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(18);
+        t.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        t.setTextColor(COL_TEXT);
+        t.setPadding(0, 0, 0, dp(10));
         return t;
     }
 
@@ -5350,15 +5399,37 @@ public class MainActivity extends Activity {
         settingsStatusView.setPadding(0, dp(8), 0, 0);
         root.addView(settingsStatusView);
 
+        // v48.3: Settings is six outlined boxes, in this order —
+        // TVs, Pairing, Per-TV, Address, This TV, App settings
+        // last. The boxes are created here and filled by the
+        // blocks below, so the order on screen is the order the
+        // boxes join root — not the order the contents were
+        // written in. The Per-TV header names the TV it follows
+        // (updatePerTvTitle keeps it fresh on every TV switch).
+        LinearLayout boxTvs = sectionBox(root);
+        LinearLayout boxPair = sectionBox(root);
+        LinearLayout boxPerTv = sectionBox(root);
+        LinearLayout boxAddress = sectionBox(root);
+        LinearLayout boxThisTv = sectionBox(root);
+        LinearLayout boxApp = sectionBox(root);
+        boxTvs.addView(boxTitle("TVs on this WiFi"));
+        boxPair.addView(boxTitle("Pair with the TV"));
+        perTvTitleView = boxTitle("Per-TV settings");
+        boxPerTv.addView(perTvTitleView);
+        updatePerTvTitle();
+        boxAddress.addView(boxTitle("TV address"));
+        boxThisTv.addView(boxTitle("This TV"));
+        boxApp.addView(boxTitle("App settings"));
+
         refreshButton = settingsButton("Refresh — find TVs again", 17);
         refreshButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { rediscover(false); }
         });
-        root.addView(refreshButton);
+        boxTvs.addView(refreshButton);
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setVisibility(View.GONE);
-        root.addView(progressBar);
+        boxTvs.addView(progressBar);
 
         // v34: TVs found on this WiFi, in Settings — the same
         // list as setup Step 2. Refresh only reported TVs
@@ -5367,16 +5438,20 @@ public class MainActivity extends Activity {
         // updateSettingsFoundUi() after every scan.
         settingsFoundLayout = new LinearLayout(this);
         settingsFoundLayout.setOrientation(LinearLayout.VERTICAL);
-        root.addView(settingsFoundLayout);
+        boxTvs.addView(settingsFoundLayout);
 
         // v48.15: auto-skip ads — while the cast strip is open,
         // a skippable ad is skipped by itself. On by default, same
         // On / Off option-button pattern as CC; the Skip Ad button
         // and double-tap still work by hand when it is off.
+        // v48.3: lives in the App settings box now, at the very
+        // bottom — first item in it, so its title sits close
+        // under the box header.
         autoSkipTitleView = settingsSectionTitle("Auto-skip ads");
-        root.addView(autoSkipTitleView);
+        autoSkipTitleView.setPadding(0, dp(6), 0, dp(10));
+        boxApp.addView(autoSkipTitleView);
         TextView autoSkipHelp = mutedText("While the cast strip is open, skip a skippable ad by itself — no tap needed. Turn it off and the Skip Ad button and double-tap still work by hand.", 14);
-        root.addView(autoSkipHelp);
+        boxApp.addView(autoSkipHelp);
         LinearLayout autoSkipRow = new LinearLayout(this);
         autoSkipRow.setOrientation(LinearLayout.HORIZONTAL);
         autoSkipRow.setPadding(0, dp(8), 0, 0);
@@ -5397,17 +5472,18 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { setAutoSkipAds(false); }
         });
         autoSkipRow.addView(autoSkipOffButton);
-        root.addView(autoSkipRow);
+        boxApp.addView(autoSkipRow);
 
         // v48.1: check for updates — same On / Off option-button
         // pattern as auto-skip. On by default; the check runs
         // once per launch and only says something when a newer
         // release exists. It contacts GitHub on startup — the
         // one exception to the app's no-cloud rule.
+        // v48.3: in the App settings box, after auto-skip.
         checkUpdatesTitleView = settingsSectionTitle("Check for updates");
-        root.addView(checkUpdatesTitleView);
+        boxApp.addView(checkUpdatesTitleView);
         TextView checkUpdatesHelp = mutedText("On startup, check GitHub for a newer release and offer a one-tap download. Nothing is shown when you are up to date.", 14);
-        root.addView(checkUpdatesHelp);
+        boxApp.addView(checkUpdatesHelp);
         LinearLayout checkUpdatesRow = new LinearLayout(this);
         checkUpdatesRow.setOrientation(LinearLayout.HORIZONTAL);
         checkUpdatesRow.setPadding(0, dp(8), 0, 0);
@@ -5428,22 +5504,33 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { setCheckUpdates(false); }
         });
         checkUpdatesRow.addView(checkUpdatesOffButton);
-        root.addView(checkUpdatesRow);
+        boxApp.addView(checkUpdatesRow);
+
+        // v48.3: the version line lives inside the App settings
+        // box now, as its last line — the standalone footer
+        // below the sections is gone. Still read from the
+        // package (v39), never hardcoded. No leading newline:
+        // the box padding supplies the space.
+        TextView footer = new TextView(this);
+        footer.setText("Quiet Remote v" + appVersionName());
+        footer.setTextSize(13);
+        footer.setTextColor(COL_MUTED);
+        footer.setPadding(0, dp(12), 0, 0);
+        boxApp.addView(footer);
 
         // --- Pairing ---
-        root.addView(settingsSectionTitle("Pair with the TV"));
         TextView pairHelp = mutedText("First time only for each TV: pick the TV on the remote screen, tap PAIR, read the PIN on that TV's screen, type it in, tap FINISH PAIRING. Each TV is paired separately.", 14);
-        root.addView(pairHelp);
+        boxPair.addView(pairHelp);
         // v16: same Quick Start reminder as in setup — a TV in
         // Eco Mode is off the network when it is off. v20: on a
         // white note card so it reads as a note, not body text.
-        root.addView(noteCard("Quick Start: put the TV in Quick Start mode (Settings > System > Power Mode > Quick Start) so it shows up on WiFi in standby. In Eco Mode the TV is off the network when it's off, and the app can't find it or turn it on.", 14));
+        boxPair.addView(noteCard("Quick Start: put the TV in Quick Start mode (Settings > System > Power Mode > Quick Start) so it shows up on WiFi in standby. In Eco Mode the TV is off the network when it's off, and the app can't find it or turn it on.", 14));
 
         pairButton = settingsButton("PAIR WITH THIS TV", 18);
         pairButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { startPairing(); }
         });
-        root.addView(pairButton);
+        boxPair.addView(pairButton);
 
         pinField = new EditText(this);
         pinField.setHint("PIN from the TV screen (4 digits)");
@@ -5460,19 +5547,19 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         pinLp.topMargin = dp(8);
         pinField.setLayoutParams(pinLp);
-        root.addView(pinField);
+        boxPair.addView(pinField);
 
         finishPairButton = settingsButton("FINISH PAIRING", 18);
         finishPairButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { finishPairing(); }
         });
-        root.addView(finishPairButton);
+        boxPair.addView(finishPairButton);
 
         pairStatusView = new TextView(this);
         pairStatusView.setTextSize(15);
         pairStatusView.setTextColor(COL_TEXT);
         pairStatusView.setPadding(0, dp(8), 0, 0);
-        root.addView(pairStatusView);
+        boxPair.addView(pairStatusView);
 
         // --- Closed Captions (v7, restyled v20): On / Off are two
         // option buttons in one row now — the current one is black
@@ -5482,11 +5569,15 @@ public class MainActivity extends Activity {
         // value ("Closed Captions: Off"). Same one fast single
         // read/write as before, never the slow full captions list
         // (1,490 ms on the bedroom TV).
+        // v48.3: first item in the Per-TV box, so its title sits
+        // close under the box header (the header already names
+        // the TV, so no separate "follows the selected TV" line).
         ccTitleView = settingsSectionTitle("Closed Captions");
+        ccTitleView.setPadding(0, dp(6), 0, dp(10));
         ccStateView = ccTitleView;
-        root.addView(ccTitleView);
+        boxPerTv.addView(ccTitleView);
         TextView ccHelp = mutedText("Captions are per TV — the buttons below change the selected TV only.", 14);
-        root.addView(ccHelp);
+        boxPerTv.addView(ccHelp);
         LinearLayout ccRow = new LinearLayout(this);
         ccRow.setOrientation(LinearLayout.HORIZONTAL);
         ccRow.setPadding(0, dp(8), 0, 0);
@@ -5507,7 +5598,7 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { setCcTo(false); }
         });
         ccRow.addView(ccOffButton);
-        root.addView(ccRow);
+        boxPerTv.addView(ccRow);
 
         // --- Sleep Timer (v14, restyled v20): the five options
         // are one row of option buttons now — the current one is
@@ -5519,9 +5610,9 @@ public class MainActivity extends Activity {
         // bedroom TV). Off / 30 / 60 / 90 / 120 min.
         sleepTitleView = settingsSectionTitle("Sleep Timer");
         sleepStateView = sleepTitleView;
-        root.addView(sleepTitleView);
+        boxPerTv.addView(sleepTitleView);
         TextView sleepHelp = mutedText("Turn the selected TV off by itself after a while. Tap a time to set it — Off cancels it.", 14);
-        root.addView(sleepHelp);
+        boxPerTv.addView(sleepHelp);
         LinearLayout sleepRow = new LinearLayout(this);
         sleepRow.setOrientation(LinearLayout.HORIZONTAL);
         sleepRow.setPadding(0, dp(8), 0, 0);
@@ -5540,7 +5631,7 @@ public class MainActivity extends Activity {
             sleepButtons.add(b);
             sleepRow.addView(b);
         }
-        root.addView(sleepRow);
+        boxPerTv.addView(sleepRow);
 
         // --- Picture Mode (v14, restyled v20): each mode is an
         // option button now — the current one is black with a
@@ -5553,9 +5644,9 @@ public class MainActivity extends Activity {
         // (bedroom Vivid, living room Calibrated).
         pictureTitleView = settingsSectionTitle("Picture Mode");
         pictureStateView = pictureTitleView;
-        root.addView(pictureTitleView);
+        boxPerTv.addView(pictureTitleView);
         TextView pictureHelp = mutedText("Tap a picture mode to switch the selected TV to it. If a mode is not supported on this TV it just stays on the current one.", 14);
-        root.addView(pictureHelp);
+        boxPerTv.addView(pictureHelp);
         pictureButtons = new ArrayList<>();
         for (final String mode : VizioApi.PICTURE_MODES) {
             Button b = optionButton(mode, false);
@@ -5569,7 +5660,7 @@ public class MainActivity extends Activity {
                 @Override public void onClick(View v) { setPictureModeTo(mode); }
             });
             pictureButtons.add(b);
-            root.addView(b);
+            boxPerTv.addView(b);
         }
 
         // --- Inputs (v12, restyled v20): input selection lives HERE only — the
@@ -5580,22 +5671,21 @@ public class MainActivity extends Activity {
         // highlighted like the other groups (black + checkmark),
         // and the section title shows it ("Inputs: HDMI-1").
         inputsTitleView = settingsSectionTitle("Inputs");
-        root.addView(inputsTitleView);
+        boxPerTv.addView(inputsTitleView);
         TextView inputsHelp = mutedText("Switch the selected TV's input. Tap SHOW INPUTS to fetch the list from the TV, then tap an input to switch to it.", 14);
-        root.addView(inputsHelp);
+        boxPerTv.addView(inputsHelp);
         Button showInputsButton = settingsButton("SHOW INPUTS", 17);
         showInputsButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { loadInputs(); }
         });
-        root.addView(showInputsButton);
+        boxPerTv.addView(showInputsButton);
         inputLayout = new LinearLayout(this);
         inputLayout.setOrientation(LinearLayout.VERTICAL);
-        root.addView(inputLayout);
+        boxPerTv.addView(inputLayout);
 
         // --- TV address ---
-        root.addView(settingsSectionTitle("TV address"));
         TextView manualHelp = mutedText("If a TV gets a new IP the app finds it by itself. Only type an IP here if auto-find keeps failing — it applies to the TV selected on the remote screen.", 14);
-        root.addView(manualHelp);
+        boxAddress.addView(manualHelp);
         manualIpField = new EditText(this);
         manualIpField.setHint("TV IP, e.g. 192.168.1.50");
         manualIpField.setHintTextColor(COL_MUTED);
@@ -5610,12 +5700,12 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         ipLp.topMargin = dp(8);
         manualIpField.setLayoutParams(ipLp);
-        root.addView(manualIpField);
+        boxAddress.addView(manualIpField);
         Button saveIpButton = settingsButton("USE THIS IP", 17);
         saveIpButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { saveManualIp(); }
         });
-        root.addView(saveIpButton);
+        boxAddress.addView(saveIpButton);
         Button forgetButton = settingsButton("FORGET PAIRING (UNPAIR THIS TV)", 15);
         forgetButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -5627,7 +5717,7 @@ public class MainActivity extends Activity {
                 refreshState();
             }
         });
-        root.addView(forgetButton);
+        boxThisTv.addView(forgetButton);
 
         // v37: take the selected TV off the remote entirely —
         // its pill leaves the top list. FORGET PAIRING above
@@ -5647,7 +5737,7 @@ public class MainActivity extends Activity {
                 removeTv(selectedIndex);
             }
         });
-        root.addView(removeButton);
+        boxThisTv.addView(removeButton);
 
         // v16: re-run first-time setup any time — lets a new
         // user (or the user, testing setup on an already-paired
@@ -5657,19 +5747,7 @@ public class MainActivity extends Activity {
         setupAgainButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { showSetup(); }
         });
-        root.addView(setupAgainButton);
-
-        // v20: no changelog wall any more (the user: "What's with
-        // all the text here?") — the version history lives in the
-        // README, not on screen. One short line, small and muted.
-        // v39: the version comes from the package itself, never
-        // a hardcoded string — the footer said v22.0 for 16
-        // builds because nobody retyped it.
-        TextView footer = new TextView(this);
-        footer.setText("\nQuiet Remote v" + appVersionName());
-        footer.setTextSize(13);
-        footer.setTextColor(COL_MUTED);
-        root.addView(footer);
+        boxThisTv.addView(setupAgainButton);
 
         return scroll;
     }
@@ -6136,7 +6214,22 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** v48.3: the Per-TV box header names the TV it follows —
+     *  "Per-TV settings — Bedroom Twelve", or plain
+     *  "Per-TV settings" with no TV yet. */
+    private String perTvTitle() {
+        return hasTv() ? "Per-TV settings — " + roomLabel() : "Per-TV settings";
+    }
+
+    private void updatePerTvTitle() {
+        if (perTvTitleView != null) perTvTitleView.setText(perTvTitle());
+    }
+
     private void updateCcUi() {
+        // v48.3: the Per-TV header follows the TV switch too —
+        // updateCcUi runs on every TV switch (via updatePairUi)
+        // and every time Settings opens.
+        updatePerTvTitle();
         // v48.23: the main-screen controls show the same state.
         updateMainCcSleepUi();
         if (ccStateView == null || ccOnButton == null || ccOffButton == null) return;
@@ -6974,7 +7067,7 @@ public class MainActivity extends Activity {
      * (onStopTrackingTouch) — never a stream of commands while
      * dragging, the way Google Home's volume works.
      *
-     * Why v8 still crept on the living-room TV (the user,
+     * Why v8 still crept on the living-room living-room TV (the user,
      * 2026-11-20 10:56 PT): fast stepping is still one HTTPS
      *  round-trip per step (~150–300 ms), so a big move still
      *  crawls one number at a time. Google Home's volume works
@@ -7031,7 +7124,7 @@ public class MainActivity extends Activity {
                     boolean ok = VizioApi.setVolume(ip, auth, level);
                     if (!ok) {
                         // Fast stepping is the path on a TV whose
-                        // absolute set does not land (living-room TV).
+                        // absolute set does not land (living-room living-room TV).
                         ok = fastStepVolumeToward(ip, auth, start, level);
                     }
                     // v6: one fast single volume read only — never a

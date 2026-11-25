@@ -246,7 +246,7 @@ public class RemoteLogicTest {
         check("cached input key is per-TV id", "tv-abc123_cached_input".equals(TvRegistry.prefKeyCachedInput(keyTv)));
 
         // 10. Identity keys survive an IP change
-        TvDevice bed = new TvDevice("192.168.1.13");
+        TvDevice bed = new TvDevice("192.168.1.61");
         bed.udn = "uuid:abcd-1234";
         bed.serialNumber = "SN987";
         bed.model = "M55Q7-H1";
@@ -269,7 +269,7 @@ public class RemoteLogicTest {
 
         // 11. matchBedroom: finds TV by identity at a NEW IP
         List<TvDevice> found = new ArrayList<>();
-        TvDevice living = new TvDevice("192.168.1.6");
+        TvDevice living = new TvDevice("192.168.1.60");
         living.udn = "uuid:living-1";
         living.port7345Open = true;
         TvDevice bedroomNewIp = new TvDevice("192.168.1.20");
@@ -277,14 +277,14 @@ public class RemoteLogicTest {
         bedroomNewIp.port7345Open = true;
         found.add(living);
         found.add(bedroomNewIp);
-        TvDevice match = ScanLogic.matchBedroom(found, "udn:uuid:abcd-1234", "192.168.1.13");
+        TvDevice match = ScanLogic.matchBedroom(found, "udn:uuid:abcd-1234", "192.168.1.61");
         check("match by identity finds new IP .20",
                 match != null && "192.168.1.20".equals(match.ip));
 
         // 12. matchBedroom: falls back to stored IP when identity unknown
-        TvDevice match2 = ScanLogic.matchBedroom(found, null, "192.168.1.6");
+        TvDevice match2 = ScanLogic.matchBedroom(found, null, "192.168.1.60");
         check("match by stored IP finds living room .6",
-                match2 != null && "192.168.1.6".equals(match2.ip));
+                match2 != null && "192.168.1.60".equals(match2.ip));
 
         // 13. matchBedroom: never guesses between two TVs on first run
         TvDevice match3 = ScanLogic.matchBedroom(found, null, null);
@@ -292,15 +292,15 @@ public class RemoteLogicTest {
 
         // 14. matchBedroom: first run with exactly one TV takes it
         List<TvDevice> one = new ArrayList<>();
-        TvDevice only = new TvDevice("192.168.1.13");
+        TvDevice only = new TvDevice("192.168.1.61");
         only.port7345Open = true;
         one.add(only);
         TvDevice match4 = ScanLogic.matchBedroom(one, null, null);
         check("first run, one TV -> take it",
-                match4 != null && "192.168.1.13".equals(match4.ip));
+                match4 != null && "192.168.1.61".equals(match4.ip));
 
         // 15. matchBedroom: empty list -> null
-        check("no devices -> null", ScanLogic.matchBedroom(new ArrayList<TvDevice>(), "udn:x", "192.168.1.13") == null);
+        check("no devices -> null", ScanLogic.matchBedroom(new ArrayList<TvDevice>(), "udn:x", "192.168.1.61") == null);
 
         // 17. v7 touchpad gestures — swipe maps to the probe-confirmed
         //     D-pad codes, tap is Select, a long still touch is nothing.

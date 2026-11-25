@@ -1,6 +1,6 @@
 # Quiet Remote
 
-**Download the app: [Quiet-Remote-v48.2.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.2/Quiet-Remote-v48.2.apk)** — tap to download, then open it to install. Free, no ads, no account.
+**Download the app: [Quiet-Remote-v48.3.apk](https://github.com/Tsonnn/quiet-remote/releases/download/v48.3/Quiet-Remote-v48.3.apk)** — tap to download, then open it to install. Free, no ads, no account.
 
 ## Quick start
 
@@ -70,8 +70,11 @@ TV directly over your home WiFi.
   wins — the app never overrides a TV you picked.
 - **Remove a TV.** A TV the app cannot find stays listed, dimmed.
   Take it off in Settings with REMOVE THIS TV.
-- **Settings shows the real version** at the bottom, so you can
-  always tell which build you have.
+- **Settings, organized into boxes.** Per-TV settings live in one
+  box whose header names the TV they follow; app settings —
+  auto-skip ads, check for updates — sit in their own box at the
+  very bottom, with the version line inside it, so you can always
+  tell which build you have.
 - **It checks for updates.** A "Check for updates" switch in
   Settings (on by default). When the app starts, it quietly asks
   GitHub for the latest release, and when a newer version exists it
@@ -96,7 +99,7 @@ TV directly over your home WiFi.
 
 ## Install
 
-1. Download `Quiet-Remote-v48.2.apk` from the
+1. Download `Quiet-Remote-v48.3.apk` from the
    [latest release](../../releases/latest).
 2. On your phone, allow installing from unknown sources for your
    browser or file manager, then open the APK to install it.
@@ -125,7 +128,7 @@ far; it should work on other SmartCast models, but if it doesn't on
 yours, please [open an issue](../../issues) with your TV's model
 and what happened.
 
-A TV shows its friendly name when it has one (for example "Living Room"), its model when only the model is known (for example "E50-E1"), or "Name unknown" with its address when it reports neither. A TV that shows only its model number (for example "E50-E1") picks up its friendly name ("Living Room") after the next scan.
+A TV shows its friendly name when it has one (for example "Den"), its model when only the model is known (for example "Den TV"), or "Name unknown" with its address when it reports neither. A TV that shows only its model number (for example "Den TV") picks up its friendly name ("Den") after the next scan.
 
 Known notes for this release:
 
@@ -154,7 +157,7 @@ android-34, and JDK 17. Edit the `SDK` and `JAVA_HOME` paths at the
 top of `build-apk.sh` if yours are elsewhere.
 
 ```sh
-./build-apk.sh                # produces TV-Remote-v48.2.apk
+./build-apk.sh                # produces Quiet-Remote-v48.3.apk
 ./build-apk.sh my-build.apk   # custom output name
 ```
 
